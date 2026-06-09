@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal site — blog + portfolio
 
-## Getting Started
+A static, content-driven personal site built with **Next.js (App Router) + TypeScript + Tailwind v4**.
+Editorial-minimal aesthetic: paper-cream canvas, warm ink, a single vermilion accent, with light/dark themes.
 
-First, run the development server:
+No backend required — everything is statically generated at build time and can be hosted free on
+Vercel, Netlify, Cloudflare Pages, or GitHub Pages.
+
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev      # local dev at http://localhost:3000
+npm run build    # production build (static export of all routes)
+npm run start    # serve the production build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Where things live
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| What you want to change         | File                                   |
+| ------------------------------- | -------------------------------------- |
+| Name, role, bio, social links   | `src/lib/site.ts`                      |
+| Portfolio / projects            | `src/data/projects.ts`                 |
+| Résumé (experience, skills…)    | `src/data/cv.ts`                       |
+| Blog posts                      | `content/blog/*.mdx`                   |
+| Colors, fonts, prose styling    | `src/app/globals.css`                  |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Adding a blog post
 
-## Learn More
+Drop a new `.mdx` file in `content/blog/` with frontmatter:
 
-To learn more about Next.js, take a look at the following resources:
+```mdx
+---
+title: "My post title"
+date: "2026-06-09"
+summary: "One-line teaser shown in the list."
+tags: ["engineering", "notes"]
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Write **Markdown / MDX** here. Reading time is computed automatically.
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+It appears on `/blog` automatically (sorted by date) with its own `/blog/<filename>` page.
 
-## Deploy on Vercel
+## Pages
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `/` — home / about hub (hero, featured work, recent writing)
+- `/work` — full project list
+- `/blog` + `/blog/[slug]` — writing index and posts (MDX)
+- `/cv` — résumé
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Stack notes
+
+- **Type:** Fraunces (display) · Hanken Grotesk (body) · JetBrains Mono (labels) — via `next/font`.
+- **Content:** MDX files read at build with `gray-matter` + rendered by `next-mdx-remote/rsc`.
+- **Theme:** class-based dark mode, set before paint to avoid flashes (`src/app/layout.tsx`).
+
+## Deploy
+
+Push to GitHub and import the repo on [Vercel](https://vercel.com) — zero config. Or run
+`npm run build` and host the output anywhere that serves static files.

@@ -1,0 +1,245 @@
+---
+title: "Deleverage coefficients: the math behind Marginly"
+date: "2026-06-09"
+summary: "Deriving Marginly's deleverage coefficients with linear algebra — an extra coefficient on top of the scaled-balance trick Aave already uses, and why the whole thing collapses into a few numbers you can update in O(1)."
+tags: ["defi", "math", "marginly"]
+---
+
+When we built Marginly, the part I'm still most fond of wasn't a contract — it was
+a small piece of linear algebra. A leveraged-trading pool holds many positions, and
+every so often it has to *deleverage*. Done naively, that means walking every
+position and adjusting it. On-chain, that's gas that grows with the number of
+positions — exactly the cost you don't want to pay at the worst possible moment.
+
+This post is how I made that update cost *constant* instead. The good news is that
+half the idea is already standard practice; I just had to extend it.
+
+## What is the deleverage
+
+Marginly was a pool for leveraged trading of a token pair — a *base* and a *quote*
+asset. A trader going long put up base as collateral and borrowed quote; a short did
+the mirror image, putting up quote and borrowing base. One side's collateral was what
+the other side borrowed.
+
+When a position gets too risky, the pool does a **margin call**: it closes the
+position by selling its collateral on a DEX to repay the debt. That's the everyday
+mechanism, and it needs the relevant token to actually be sitting in the pool to
+sell.
+
+**Deleveraging** is the heavier tool: rather
+than acting on a single position, it retires debt against collateral across a whole
+*side* of the pool at once — [`deleverageLong`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L325-L336)
+reduces every long's quote debt and base collateral;
+[`deleverageShort`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L311-L322)
+does the same for shorts — and it does so purely by nudging a few global
+coefficients, never by rewriting individual positions. In the contract the two sit
+right next to liquidation:
+[`liquidate`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L241-L265)
+"applies deleverage if needed then enacts MC."
+
+## Why deleverage at all
+
+So why have a second, pool-wide mechanism at all? 
+
+Because a margin call needs
+collateral available to sell, and a leveraged pool can reach a corner where there
+isn't. If almost all of one side's collateral has been borrowed out, and that
+collateral's price then starts to fall, the at-risk positions can't be liquidated the
+usual way — there's simply nothing to sell on a DEX. The normal safety valve is gone
+precisely when you need it.
+
+Deleveraging is the answer to that corner: it de-risks the whole side at once instead
+of depending on individual liquidations. We provisioned for this while building
+Marginly, on the assumption that "all the collateral is borrowed" was a state a pool
+could genuinely reach.
+
+It can. The April 2026 Aave incident — well after we'd designed for it — is
+real-world proof the scenario isn't hypothetical: a bridge exploit minted unbacked
+[KelpDAO](https://governance.aave.com/t/rseth-incident-report-april-20-2026/24580)
+rsETH, which was deposited into Aave as collateral and used to borrow roughly $190M
+of real assets before the markets were frozen. Different protocol, different root
+cause, but the same end state — collateral effectively gone while the debt stays on
+the books.
+
+## Borrowing a trick from Aave
+
+The other half of the idea isn't new at all. Aave never stores your "real" balance.
+An aToken (your collateral) stores a *scaled* balance; your actual balance is
+recovered by multiplying by a single `liquidityIndex`. A variable debt token does the
+same with a `variableBorrowIndex`. Interest accrual is then just bumping one index —
+every balance moves at once, with no per-account writes.
+
+$$
+\text{actual balance} = \text{scaled balance} \times \text{index}.
+$$
+
+That index is exactly what I'll call a *coefficient*. Marginly used the same idea:
+one coefficient for collateral, one for debt — declared as
+[state variables](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L72-L83)
+and [initialised to 1](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L127-L131).
+The only new thing is that deleveraging needs an *extra* coefficient — and a little
+linear algebra to justify it.
+
+## Scaled vs. actual values
+
+I'll write the coefficients as $k_c$, $k_d$, $k_\delta$; in the code they're
+`collateralCoeff`, `debtCoeff`, and `delevCoeff` (one pair per side, base and quote).
+
+Each position stores a *scaled* collateral $\hat c$ and debt $\hat d$. (We called
+these `discounted` values in the code — an ambiguous name we never found a good
+replacement for; "scaled," in the Aave sense, is what they really are.) The *actual*
+values — `real` in the code — are recovered by scaling:
+
+$$
+\begin{pmatrix} c \\ d \end{pmatrix}
+=
+\begin{pmatrix} k_c & 0 \\ 0 & k_d \end{pmatrix}
+\begin{pmatrix} \hat c \\ \hat d \end{pmatrix},
+\qquad
+c = k_c\,\hat c,\quad d = k_d\,\hat d.
+$$
+
+Writing this as a matrix looks like overkill — it's diagonal, just two independent
+scalings. That's exactly why the linear-algebra framing wasn't obvious to us at the
+time: a diagonal matrix hides the fact that there's any structure worth exploiting.
+The payoff only shows up once deleveraging breaks the diagonal — then composition
+does the work for free.
+
+I'll also need the totals: $D$ for total actual debt and $\hat D$ for total scaled
+debt, related the same way, $D = k_d\,\hat D$.
+
+## Deleveraging is also a linear map
+
+Take one side — collateral $c$, debt $d$. To deleverage, the pool retires an amount
+$a$ of debt and removes a matching amount $s$ of collateral, and every position takes
+its proportional share $d/D$ (its debt over the side's total):
+
+$$
+c' = c - s\,\frac{d}{D},
+\qquad
+d' = d - a\,\frac{d}{D}.
+$$
+
+The thing to notice is that this is *linear* in $(c, d)$ — it's a single matrix:
+
+$$
+\begin{pmatrix} c' \\ d' \end{pmatrix}
+=
+\begin{pmatrix} 1 & -\dfrac{s}{D} \\[6pt] 0 & 1 - \dfrac{a}{D} \end{pmatrix}
+\begin{pmatrix} c \\ d \end{pmatrix}.
+$$
+
+And we *already* express $(c, d)$ as a linear map of the stored scaled values. Two
+linear maps in a row compose into one — that's the whole trick.
+
+## It collapses into three coefficient updates
+
+In general the coefficient map already carries a deleverage term $k_\delta$ from past
+deleveragings (it's simply $0$ the first time). Multiply the deleverage matrix by it:
+
+$$
+\begin{pmatrix} 1 & -\frac{s}{D} \\ 0 & 1-\frac{a}{D} \end{pmatrix}
+\begin{pmatrix} k_c & -k_\delta \\ 0 & k_d \end{pmatrix}
+=
+\begin{pmatrix} k_c & -\left(k_\delta + \frac{s\,k_d}{D}\right) \\ 0 & k_d\left(1-\frac{a}{D}\right) \end{pmatrix}.
+$$
+
+Substituting $D = k_d\,\hat D$, the new matrix is just the old one with two scalars
+moved:
+
+$$
+k_\delta \;\leftarrow\; k_\delta + \frac{s}{\hat D},
+\qquad
+k_d \;\leftarrow\; k_d - \frac{a}{\hat D},
+$$
+
+and $k_c$ untouched. That's the entire operation — two additions, no matter how many
+positions exist. It's exactly what the contract does:
+[`deleverageLong`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L325-L336)
+and
+[`deleverageShort`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L311-L322)
+each bump one delev coefficient up and one debt coefficient down.
+
+The new coefficient earns its keep when you read a position back: actual collateral
+becomes $c = k_c\,\hat c - k_\delta\,\hat d$. It's a running tally of collateral
+swapped away per unit of debt — the off-diagonal term the plain scaled-balance model
+doesn't have. And there's a bonus symmetry: leveraging is the same step with $a$ and
+$s$ negated, so a leverage right after a deleverage returns every coefficient to where
+it was. The maps are inverses.
+
+One caveat lives in the debt row. If a single
+deleverage retired a side's *entire* debt, you'd get $a = D$ and $k_d \to 0$ — and a
+zero debt coefficient doesn't just lose precision, it erases information. Once
+$k_d = 0$, every scaled debt maps to the same actual debt of zero (it's only
+$\hat d \cdot 0$), and there's no coefficient left to recover what anyone owed. The
+whole accrual machinery stops working.
+
+You only reach that corner by liquidating a whale who has borrowed essentially the
+entire pool on their own — unlikely, but not impossible. So we didn't let it happen:
+rather than let $k_d$ collapse, [the deleverage
+reverts](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L318-L320)
+just short of the edge. Clearing a
+position that large is left to a separate path:
+[`receivePosition`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L1196),
+where a [keeper](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/keepers/MarginlyKeeperAave.sol)
+flash-loans the funds, repays the bad position's debt, takes the position over, and
+repays the flash loan out of what it absorbed — with
+[a variant per flash-loan source](https://github.com/eq-lab/marginly/tree/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/keepers)
+(Aave, Balancer, Uniswap V3, and so on).
+
+## The zero in the corner
+
+We've now named three of the matrix's four slots. Lining them up:
+
+$$
+\begin{pmatrix} c \\ d \end{pmatrix}
+=
+\begin{pmatrix} k_c & -k_\delta \\ 0 & k_d \end{pmatrix}
+\begin{pmatrix} \hat c \\ \hat d \end{pmatrix}
+$$
+
+- $k_c$ — actual collateral per unit of scaled collateral.
+- $-k_\delta$ — how much a unit of scaled debt eats into actual collateral (deleverage).
+- $k_d$ — actual debt per unit of scaled debt.
+- the $(1,0)$ slot, sitting at $0$ — how much actual *debt* a unit of scaled
+  *collateral* would carry.
+
+It stays $0$ because every operation we apply is upper-triangular: deleverage turns
+debt into a collateral reduction, but nothing turns collateral into debt. So a
+position's actual debt never depends on its collateral — a tidy invariant, and part
+of why the model stays easy to reason about.
+
+The slot isn't meaningless, though. It's the mirror image of $k_\delta$, and a few
+real scenarios would fill it:
+
+- **Socialized bad debt.** When a liquidation leaves a shortfall the collateral can't
+  cover, protocols sometimes spread that loss across the remaining positions. Spread
+  it in proportion to each position's collateral and you're adding debt as a function
+  of collateral — exactly this entry. A whole socialization event becomes one
+  coefficient bump instead of a rewrite of everyone's debt.
+- **A premium on collateral.** An insurance or risk fee sized to how much collateral
+  a position holds, accruing as debt, lands in the same place.
+- **The mirror of deleverage.** Deleverage spends collateral to retire debt; the
+  symmetric move — issuing debt against the pool's aggregate collateral — is its
+  transpose, and it would live here.
+
+We never needed any of these in Marginly, so the corner stayed empty. But it's worth
+knowing the framework has room: each would be one more coefficient and the same
+$O(1)$ update, not a new pass over every position.
+
+## What it comes down to
+
+I've written a lot of code I've since forgotten. Marginly itself is long gone now —
+but this is the piece I still remember.
+
+Part of that is sentimental. I studied math and physics for years before I
+wrote my first smart contract, and for some time none of it obviously mattered to
+the day job. Then a pool full of leveraged positions turned out to be a $2\times2$
+matrix, and a problem that looked like expensive bookkeeping was hiding in plain
+sight inside a first-year linear algebra course. Finding it felt less like inventing
+something than like recognizing an old friend.
+
+That's the feeling I keep chasing in this work. Most of it is plumbing — necessary,
+unglamorous plumbing. But every so often the shape of a problem rhymes with something
+you learned years earlier, and the whole thing goes quiet and clicks into place. That
+click is why I still do this.

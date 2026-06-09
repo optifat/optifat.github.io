@@ -1,26 +1,244 @@
 @import "tailwindcss";
 
+/* Dark mode driven by a class on <html>, set before paint to avoid FOUC. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Aesthetic: editorial-minimal with warmth.
+  Paper-cream canvas, warm ink, a single confident vermilion accent.
+  Type: Fraunces (optical display serif) + Hanken Grotesk (humanist body)
+        + JetBrains Mono (metadata / labels).
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Plum & parchment — warm parchment, muted royal-plum accent. */
+  --paper: #f6f3ee;
+  --paper-2: #ece7df;
+  --ink: #2c2733;
+  --ink-soft: #4f4858;
+  --muted: #837b8a;
+  --faint: #a89eb0;
+  --line: #e4ded3;
+  --accent: #7d4ea3;
+  --accent-soft: #9a6cc0;
+  --accent-ghost: #efe6f3;
+}
+
+.dark {
+  /* Deep navy-charcoal ground, carrying the plum accent. */
+  --paper: #161b22;
+  --paper-2: #1e242c;
+  --ink: #e6e9ed;
+  --ink-soft: #b6bdc6;
+  --muted: #828b96;
+  --faint: #5d6776;
+  --line: #2a313a;
+  --accent: #b78bdc;
+  --accent-soft: #c8a3e6;
+  --accent-ghost: #261d38;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ghost: var(--accent-ghost);
+
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-hanken);
+  --font-mono: var(--font-jbmono);
+
+  --default-font-family: var(--font-sans);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "ss01", "cv05";
+  /* Subtle paper grain. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--paper);
+}
+
+/* Fraunces optical sizing for big display text. */
+.font-display {
+  font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 0, "WONK" 0, "opsz" 144;
+  letter-spacing: -0.02em;
+}
+
+/* Mono eyebrow label used across the site. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Underline-on-hover link, editorial style. */
+.link-underline {
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0% 1.5px;
+  transition: background-size 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.link-underline:hover {
+  background-size: 100% 1.5px;
+}
+
+/* ---- Entrance choreography ---- */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* ---- Prose styling for MDX posts ---- */
+.prose {
+  color: var(--ink-soft);
+  font-size: 1.075rem;
+  line-height: 1.78;
+}
+.prose > * + * {
+  margin-top: 1.35em;
+}
+.prose h2 {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  color: var(--ink);
+  font-size: 1.7rem;
+  font-weight: 480;
+  letter-spacing: -0.015em;
+  margin-top: 2.4em;
+  margin-bottom: -0.4em;
+  line-height: 1.2;
+}
+.prose h3 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  font-size: 1.3rem;
+  font-weight: 500;
+  margin-top: 1.8em;
+  margin-bottom: -0.5em;
+}
+.prose a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+}
+.prose a:hover {
+  color: var(--accent);
+}
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.prose blockquote {
+  border-left: 2px solid var(--accent);
+  padding-left: 1.2rem;
+  font-style: italic;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+}
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  padding: 0.1em 0.4em;
+  border-radius: 5px;
+}
+.prose pre {
+  font-family: var(--font-mono);
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.2rem 1.4rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+.prose ul,
+.prose ol {
+  padding-left: 1.3rem;
+}
+.prose li {
+  margin-top: 0.5em;
+}
+.prose ul li {
+  list-style: none;
+  position: relative;
+}
+.prose ul li::before {
+  content: "";
+  position: absolute;
+  left: -1.1rem;
+  top: 0.72em;
+  width: 5px;
+  height: 5px;
+  background: var(--accent);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 2.5em 0;
+}
+
+/* KaTeX display math: let wide matrices scroll instead of overflowing. */
+.prose .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.4em 0;
+  margin: 0;
+}
+.prose .katex {
+  color: var(--ink);
 }

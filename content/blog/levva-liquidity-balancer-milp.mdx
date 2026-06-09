@@ -1,0 +1,41 @@
+---
+title: "From heuristics to MILP: rebuilding the Levva liquidity balancer"
+date: "2026-06-09"
+summary: "Reworking Levva's vault liquidity balancer from an earlier C# heuristic into a Rust MILP graph solver — and what that bought us in production."
+tags: ["rust", "optimization", "defi", "levva"]
+draft: true
+---
+
+> **Draft — this one's yours to write, Pavel.** It's hidden from the blog index
+> while `draft: true` is set, but reachable by direct link. Remove that line in
+> the frontmatter to publish, and the "Read the writeup" link will appear on the
+> Levva Liquidity Balancer project automatically. The outline below is just
+> scaffolding — rewrite freely.
+
+Allocating a vault's liquidity across target protocols and pending withdrawals
+sounds simple until you actually try to do it well. Here's how the Levva balancer
+went from a heuristic that mostly worked to a MILP solver that provably does.
+
+## The earlier heuristic
+
+_What the original C# heuristic did (one I'd worked on too), and where it fell
+short — the cases where "good enough" wasn't._
+
+## Framing it as a graph
+
+_How the allocation problem maps onto a graph, and why that framing makes the
+constraints natural to express._
+
+## The MILP formulation
+
+_Variables, constraints, objective. The mixed-integer linear program itself — the
+heart of the writeup._
+
+## Building it in Rust
+
+_Why Rust, the solver, and how the service fits into the rest of the system._
+
+## In production
+
+_Accuracy gains over the heuristic, what running it live taught me, and what's
+still open._
