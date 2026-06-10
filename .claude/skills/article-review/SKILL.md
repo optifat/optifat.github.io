@@ -59,6 +59,11 @@ For each lens, launch a `general-purpose` subagent via the Agent tool. The promp
   "software engineers who may not know the specific domain, but who are comfortable
   with school and first-year-university math — basic calculus/analysis, linear algebra,
   big-O — so don't flag those as unexplained");
+- tell it that **links to the author's other articles are intentional cross-references** — a
+  "read this next / go deeper" hook, not missing context. The reviewer must NOT flag them as
+  undefined or unexplained. The one exception: if the current piece is genuinely *incomprehensible*
+  without clicking through (load-bearing content hidden behind a link), flag the hidden
+  content — never the link itself;
 - tell it to **diagnose, not rewrite** — no fixes, no praise, no summary of what's good;
 - require, per finding: a **short quote or heading + line number**, **what** is wrong, and a
   **severity** (BLOCKER / MODERATE / MINOR, defined below);
@@ -75,6 +80,9 @@ Reuse this template, filling in `{lens}`, `{rubric}`, `{audience}`, `{path}`:
 > specifically is wrong, (3) severity — BLOCKER (a target reader is genuinely lost),
 > MODERATE (a recoverable stumble), or MINOR (slightly unclear/awkward). Quote the text.
 > Do NOT rewrite or fix anything. Do NOT praise or summarize what's good — only friction.
+> Links to the author's *other articles* are intentional "read next" cross-references, not
+> gaps — don't flag them as missing context unless this piece genuinely can't be followed
+> without one, and then flag the hidden content, not the link.
 > Group findings by section in reading order, then give a one-paragraph overall read.
 > Read the actual file; do not assume its contents.
 

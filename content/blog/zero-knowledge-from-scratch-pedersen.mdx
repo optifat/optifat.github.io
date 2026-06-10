@@ -1,0 +1,257 @@
+---
+title: "Zero-knowledge from scratch: commitments, and two programs arguing over a socket"
+date: "2026-06-10"
+summary: "How I started learning zero-knowledge proofs at the end of 2022 — building Pedersen commitments and interactive Sigma protocols by hand in Rust, as a prover and a verifier shouting numbers across a TCP socket. The first in a series that ends at modern proof systems; including the cryptographic flaw my younger self happily shipped."
+tags: ["zk", "cryptography", "rust"]
+---
+
+This is the first post in a series about zero-knowledge proofs, told through the code I
+wrote while learning them. The plan is to climb: from hand-rolled commitments and
+interactive protocols (here), to modern succinct proof systems, to the zkVMs that let you
+prove a whole program. But everything starts with one primitive and one stubborn question
+— *can I convince you a statement is true while telling you almost nothing about why?*
+
+If the idea is new to you: a *zero-knowledge proof* lets one party convince another that a
+statement is true while revealing nothing beyond its truth. The canonical intuition is the
+**Ali Baba cave** — proving you know the secret word that opens a door deep in a ring-shaped
+cave, without ever speaking it. I won't retell it here; the
+[Wikipedia article](https://en.wikipedia.org/wiki/Zero-knowledge_proof) and the original
+[*How to Explain Zero-Knowledge Protocols to Your Children*](https://fermatslibrary.com/s/how-to-explain-zero-knowledge-protocols-to-your-children)
+do it more justice than a paragraph could. The shape is all you need here: *convince,
+without revealing.*
+
+## Why I went looking
+
+Back at the end of 2022 I was working on [Equilibrium](https://equilibrium.io/), a
+cross-chain money market built as a Polkadot parachain. It had a class of users called
+**bailsmen**: people who pledged liquidity into a shared *bailout pool* ahead of time, in
+exchange for rewards. When a borrower's loan went *underwater* — their **collateral** (the
+funds they'd put up to back it) no longer worth enough to cover the debt — the protocol
+didn't have to dump that collateral on a market — it
+[transferred the debt and collateral](https://github.com/eq-lab/equilibrium/blob/ddab6da9fdbca80c7988b21c3eff96712d576f64/pallets/eq-bailsman/src/lib.rs#L614)
+straight to the bailsmen, and
+[**redistributed it pro-rata**](https://github.com/eq-lab/equilibrium/blob/ddab6da9fdbca80c7988b21c3eff96712d576f64/pallets/eq-bailsman/src/lib.rs#L875-L881)
+across the whole pool — each bailsman's share being their net balance over the pool's total,
+`(collateral − debt) / total`.
+
+That "across the whole pool" is the part that bit us. Settling a liquidation meant
+[*iterating over every bailsman*](https://github.com/eq-lab/equilibrium/blob/ddab6da9fdbca80c7988b21c3eff96712d576f64/pallets/eq-bailsman/src/lib.rs#L768-L777)
+to apportion their share — and on a blockchain, where every operation is metered and paid
+for, work that grows with the number of users is exactly the work you can't afford. (If
+you've read my [Marginly post](/blog/marginly-deleverage-coefficients), this is the same
+smell, and the same cure: it's *socialized bad debt* — spreading one borrower's shortfall
+across a pool — and that's the kind of per-user loop you can sometimes collapse into a single
+global update instead of touching every account. It nearly fits here too. The catch is that a
+bailsman's balance lives in many tokens at different prices, which turns the tidy bookkeeping
+into something messier than a handful of global numbers — a tangent for another day. Back
+then I knew none of this; I just knew the loop was too long.)
+
+So we went looking for a way out, and the thing in the air at the time was
+*zero-knowledge*. The dream was seductive: do the heavy per-bailsman computation *off*
+chain, then post a single short **proof** that you'd done it correctly — so the chain
+verifies the result without redoing the work. Whether that was the right tool for that
+exact problem is debatable (it never shipped). But it sent me down a rabbit hole, and the
+only way I know how to learn something is to build the smallest version of it by hand. This
+post is that smallest version.
+
+## Commitments: hiding and binding
+
+The atom of almost every ZK protocol is a **commitment** — the cryptographic equivalent of
+sealing a value in an envelope. You compute a commitment to some value now, hand it over,
+and reveal the value later. A good commitment scheme has two properties that pull in
+opposite directions:
+
+- **Hiding** — the sealed envelope tells the holder nothing about the value inside.
+- **Binding** — you can't change your mind. There's exactly one value you can later open
+  the envelope to.
+
+Hiding protects the prover; binding protects the verifier. The whole game is getting both
+at once.
+
+## Pedersen, in a prime field
+
+The scheme I reached for is the **Pedersen commitment**. Pick a large prime $p$ and two
+**generators** $g$ and $h$ of the integers modulo $p$ — elements whose successive powers
+run through the whole group. To commit to a value $v$, pick
+a random *blinding key* $k$ and compute
+
+$$
+C = g^{v}\, h^{k} \bmod p.
+$$
+
+Why this works:
+
+- It's **hiding** because $h^{k}$, with $k$ chosen uniformly at random, smears $C$
+  uniformly across the group — so $C$ on its own leaks nothing about $v$.
+- It's **binding** because opening the same $C$ to two different values would let you solve
+  for the relationship between $g$ and $h$ — and that's a **discrete logarithm**, the
+  problem the whole scheme bets you can't solve.
+
+In my Rust it [looked about like this](https://github.com/optifat/pedersen-commitment-scheme/blob/fa278dc993922f06e52022a7007b3c8699725158/pedersen-commitment/src/lib.rs#L15-L31) (cleaned up):
+
+```rust
+// C = g^value * h^key  (mod p)
+pub fn commit(pk: &PublicKey, value: U256, key: U256) -> U256 {
+    let g_v = mod_exp(pk.g, value, pk.prime);
+    let h_k = mod_exp(pk.h, key,   pk.prime);
+    (g_v * h_k) % pk.prime
+}
+```
+
+A confession about that helper: in the actual repo `mod_exp` is named
+[`discrete_logarithm`](https://github.com/optifat/pedersen-commitment-scheme/blob/fa278dc993922f06e52022a7007b3c8699725158/pedersen-commitment/src/lib.rs#L40-L57).
+It does no such thing — it computes a modular *exponentiation*,
+$g^x \bmod p$, by square-and-multiply. The discrete logarithm is the *inverse*: given $g$
+and $g^x$, recover $x$. That inverse is the hard problem Pedersen's binding leans on —
+naming the easy forward function after the hard backward one is the kind of joke past-me
+left lying around for present-me to find. (I also learned the hard way that $g^x$ overflows
+a `u128` long before you're done; the fix was to carry the arithmetic in `U256` and reduce
+mod $p$ after every multiply.)
+
+## The proof is a conversation
+
+A commitment lets me *seal* a value. A **zero-knowledge proof** lets me convince you of a
+statement *about* the sealed value without unsealing it. In the classical setting that
+proof is literally a conversation — an **interactive protocol** — and I took "interactive"
+very literally: I wrote the prover and the verifier as **two separate programs talking over
+a TCP socket**, with a
+[one-byte opcode](https://github.com/optifat/pedersen-commitment-scheme/blob/fa278dc993922f06e52022a7007b3c8699725158/prover/src/main.rs#L49-L57)
+picking which protocol to run.
+
+```rust
+match opcode {
+    101 => is_commit_openable(stream, &pk, &mut commits)?, // "I know an opening"
+    102 => multiplication(stream, &pk, &commits)?,         // "c commits to a·b"
+    103 => protocol_0_1(stream, &pk, &commits)?,           // "this is a bit"
+    // ...
+}
+```
+
+The [simplest one](https://github.com/optifat/pedersen-commitment-scheme/blob/fa278dc993922f06e52022a7007b3c8699725158/prover/src/protocols.rs#L16-L71)
+proves *I know how to open this commitment* — that I hold a $(v, k)$ with
+$C = g^v h^k$ — without revealing either. It's a three-move dance (a **Sigma protocol**):
+
+1. **Commit.** The prover picks fresh randoms $(v_a, k_a)$ and sends $a = g^{v_a} h^{k_a}$.
+2. **Challenge.** The verifier sends back a random number $e$.
+3. **Respond.** The prover sends $z_v = v_a + e\,v$ and $z_k = k_a + e\,k$.
+
+The verifier then checks one equation:
+
+$$
+g^{z_v}\, h^{z_k} \;\overset{?}{=}\; a \cdot C^{\,e} \pmod p.
+$$
+
+It balances because $g^{v_a + ev} h^{k_a + ek} = (g^{v_a} h^{k_a}) \cdot (g^{v} h^{k})^{e}
+= a \cdot C^{e}$. The magic is in move 3: the prover commits to $a$ *before* hearing the
+challenge $e$, so they can't tailor their answer — yet the random blinding $(v_a, k_a)$
+means the response $z$ reveals nothing about the real $(v, k)$. Bind first, then answer:
+that ordering is the soul of every interactive proof.
+
+## Proving a bit without revealing it
+
+The [protocol I'm fondest of](https://github.com/optifat/pedersen-commitment-scheme/blob/fa278dc993922f06e52022a7007b3c8699725158/prover/src/protocols.rs#L122)
+proves that a committed value is a **bit** — that it's $0$ or
+$1$ — and nothing more. This sounds modest until you try it: you can't just *open* the
+commitment (that reveals the bit), and you can't prove "it's $0$" (false half the time) or
+"it's $1$" (false the other half). You need to prove a **disjunction**: *it's $0$ **or**
+it's $1$*, without leaking which.
+
+The trick — an *OR-proof* — is delightful. You run the Sigma protocol for the branch that's
+actually true honestly, and you **fake the other branch by running it backwards**: pick the
+response and the challenge *first*, then compute the "commitment" that would make the
+verifier's equation hold. A simulated transcript is indistinguishable from a real one. The
+only constraint tying them together is that the two branch-challenges must sum to the one
+challenge the verifier sends — so you get to choose the fake branch's share freely, but the
+real branch's share is then forced, and you can only answer *that* one if you genuinely know
+the opening. One branch is real, one is theater, and the verifier can't tell which is which.
+
+In the repo this runs over a pair of commitments — proving they hold $0$ and $1$ in some
+order — and the verifier closes it by checking four equations, one per simulated/real
+half. The shape is the thing to take away: **a proof of "this is a bit" is a proof of "this
+OR that," and OR is built by honestly proving one side and convincingly faking the other.**
+
+Hold onto this protocol. It's the seed of the entire series.
+
+## The math was right. The setup wasn't.
+
+Let me name the mistake plainly, because I'm not ashamed of it — and I want to be precise
+about what *kind* of mistake it was. It wasn't a math error: the commitment formula is
+correct, the Sigma protocols are correct, every verification equation balances, nothing
+computes the wrong number. It was a **misunderstanding**. I missed a property the whole
+scheme quietly leans on — **my $g$ and $h$ weren't independent.**
+
+My [key setup](https://github.com/optifat/pedersen-commitment-scheme/blob/fa278dc993922f06e52022a7007b3c8699725158/pedersen-commitment/src/public_key.rs#L9-L18)
+looked like this:
+
+```rust
+let prime = 569404824955867369435262525629;
+let g = 3;
+let x = 1;
+let h = g.pow(x); // h = g^x
+```
+
+Deriving $h$ as $g^{x}$ is exactly the right *shape* — that's a perfectly standard way to
+get a second generator. The whole question is what $x$ is allowed to be. I set $x = 1$, so
+$h = g$, and the commitment collapses:
+
+$$
+C = g^{v}\, h^{k} = 3^{v} \cdot 3^{k} = 3^{\,v + k}.
+$$
+
+Now $C$ depends only on the **sum** $v + k$. It's still hiding — a random $k$ still blinds
+it — but it's no longer **binding to $v$**: for any other value $v'$ I can pick
+$k' = v + k - v'$ and open the *same* envelope to $v'$. And every proof above still passes,
+because the protocol algebra never checks that $g$ and $h$ are independent — it just assumes
+they are.
+
+And *independent* is the word that carries the whole thing, so let me pin it down: it does
+**not** mean "two different numbers." It means there's **no known discrete-log relation**
+between $g$ and $h$ — nobody knows the $x$ with $h = g^{x}$. That's the assumption I never
+knew was there. With $h = g^{1}$ the relation isn't merely known; it's trivial.
+
+This is also why "just pick a luckier $x$" misses it. A big random $x$ makes $h$ stop
+*looking* like $g$, but if you still *know* $x$, binding is just as broken —
+$g^{v} h^{k} = g^{\,v + xk}$, and knowing $x$ lets you trade value for blinding at will. The
+requirement was never a *large* $x$; it's an **unknown** one. Binding rests on nobody — not
+even whoever ran the setup — knowing $\log_g h$, and the usual way to get that is to derive
+$h$ by *hashing* into the group, so its log relative to $g$ is genuinely no one's secret.
+Setting $x = 1$ didn't break a correct scheme; it just made the missing assumption loud
+enough that, eventually, I'd trip over it and learn it was there.
+
+## What this couldn't do — yet
+
+The playground worked, and it taught me the primitives in my hands instead of in a paper.
+But step back and every limitation points somewhere:
+
+- **It's interactive.** The verifier has to be online and send a fresh random challenge.
+  That's a non-starter for a blockchain, where there's no one to play the verifier in real
+  time. The fix is the **Fiat–Shamir transform**: replace the verifier's random challenge
+  with a hash of the transcript so far. The conversation becomes a single self-contained
+  message — a *non-interactive* proof.
+- **It's bespoke.** I hand-wrote a separate protocol for "openable," for "product," for
+  "is a bit." Real systems let you state an *arbitrary* computation and prove it with one
+  machine. That's what **SNARKs and STARKs** are — general proof systems that turn any
+  computation into one short, checkable proof (the names unpack to *succinct non-interactive
+  arguments of knowledge* and their transparent, hash-based cousins). The rest of this
+  series lives in them.
+- **It's not succinct, and the prime is a toy.** A real proof should be tiny and fast to
+  check regardless of the statement's size — which, circling all the way back, is the only
+  reason the bailsmen idea was ever tempting: prove a computation over *all* users with a
+  proof whose verification cost doesn't grow with the number of users.
+
+That's the ladder for the rest of the series.
+
+## Where this goes next
+
+None of this was succinct, non-interactive, or general — the three things a real system
+needs. So next I take the exact problem that sent me here, the bailsmen redistribution, and
+hand it to a proper proof system: no one on the other end of a socket, one short proof,
+checked in a single shot. Whether the off-chain dream survives contact with a verifier is
+the next post.
+
+---
+
+*The snippets above are simplified for readability; the real (toy) code is at
+[optifat/pedersen-commitment-scheme](https://github.com/optifat/pedersen-commitment-scheme),
+and the inline links point straight into it. The Equilibrium bailsmen code is public too,
+linked in the opening.*
