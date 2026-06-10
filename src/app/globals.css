@@ -232,6 +232,38 @@ body {
   margin: 2.5em 0;
 }
 
+/* Syntax highlighting (rehype-highlight / highlight.js) — restrained, on-brand. */
+.prose .hljs-comment,
+.prose .hljs-quote {
+  color: var(--faint);
+  font-style: italic;
+}
+.prose .hljs-keyword,
+.prose .hljs-built_in,
+.prose .hljs-literal,
+.prose .hljs-selector-tag,
+.prose .hljs-section,
+.prose .hljs-doctag {
+  color: var(--accent);
+}
+.prose .hljs-string,
+.prose .hljs-number,
+.prose .hljs-regexp,
+.prose .hljs-meta,
+.prose .hljs-symbol {
+  color: var(--accent-soft);
+}
+.prose .hljs-title,
+.prose .hljs-name,
+.prose .hljs-type,
+.prose .hljs-class .hljs-title,
+.prose .hljs-attr,
+.prose .hljs-attribute,
+.prose .hljs-variable,
+.prose .hljs-params {
+  color: var(--ink);
+}
+
 /* KaTeX display math: let wide matrices scroll instead of overflowing. */
 .prose .katex-display {
   overflow-x: auto;

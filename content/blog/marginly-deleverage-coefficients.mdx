@@ -1,8 +1,8 @@
 ---
 title: "Deleverage coefficients: the math behind Marginly"
-date: "2026-06-09"
+date: "2026-05-20"
 summary: "Deriving Marginly's deleverage coefficients with linear algebra — an extra coefficient on top of the scaled-balance trick Aave already uses, and why the whole thing collapses into a few numbers you can update in O(1)."
-tags: ["defi", "math", "marginly"]
+tags: ["math", "defi", "marginly"]
 ---
 
 When we built Marginly, the part I'm still most fond of wasn't a contract — it was
@@ -14,17 +14,23 @@ positions — exactly the cost you don't want to pay at the worst possible momen
 This post is how I made that update cost *constant* instead. The good news is that
 half the idea is already standard practice; I just had to extend it.
 
-## What is the deleverage
+## What is Marginly
 
-Marginly was a pool for leveraged trading of a token pair — a *base* and a *quote*
-asset. A trader going long put up base as collateral and borrowed quote; a short did
-the mirror image, putting up quote and borrowing base. One side's collateral was what
-the other side borrowed.
+Marginly was a pool for *leveraged* trading of a token pair — trading with borrowed
+money so a price move counts for more than your own stake would allow. The pair has
+two sides, a *base* asset and a *quote* asset (the thing being priced and the thing
+it's priced in — ETH and USDC, say). To open a position you post some funds of your
+own as *collateral* and borrow the rest from the pool; what you borrow is your *debt*.
+A trader going **long** (betting the price rises) put up base as collateral and
+borrowed quote; a **short** (betting it falls) did the mirror image, putting up quote
+and borrowing base. So one side's collateral was exactly what the other side borrowed.
 
 When a position gets too risky, the pool does a **margin call**: it closes the
-position by selling its collateral on a DEX to repay the debt. That's the everyday
-mechanism, and it needs the relevant token to actually be sitting in the pool to
-sell.
+position by selling its collateral on a DEX (a decentralized exchange — an on-chain
+market you can swap tokens against) to repay the debt. That's the everyday mechanism,
+and it needs the relevant token to actually be sitting in the pool to sell.
+
+## What is the deleverage
 
 **Deleveraging** is the heavier tool: rather
 than acting on a single position, it retires debt against collateral across a whole
@@ -33,9 +39,11 @@ reduces every long's quote debt and base collateral;
 [`deleverageShort`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L311-L322)
 does the same for shorts — and it does so purely by nudging a few global
 coefficients, never by rewriting individual positions. In the contract the two sit
-right next to liquidation:
+right next to liquidation — the entry point that closes out an unsafe position:
 [`liquidate`](https://github.com/eq-lab/marginly/blob/7088da4d99a88ca722bd055880a6aa6782d0bcba/packages/contracts/contracts/MarginlyPool.sol#L241-L265)
-"applies deleverage if needed then enacts MC."
+"applies deleverage if needed then enacts MC" (the margin call). So a liquidation is
+really *deleverage-then-margin-call*: clear the corner case pool-wide first, only if
+needed, then let the ordinary margin call finish the job.
 
 ## Why deleverage at all
 
@@ -53,8 +61,9 @@ of depending on individual liquidations. We provisioned for this while building
 Marginly, on the assumption that "all the collateral is borrowed" was a state a pool
 could genuinely reach.
 
-It can. The April 2026 Aave incident — well after we'd designed for it — is
-real-world proof the scenario isn't hypothetical: a bridge exploit minted unbacked
+It can. The April 2026 incident at Aave (the largest DeFi lending protocol) — well
+after we'd designed for it — is real-world proof the scenario isn't hypothetical: a
+bridge exploit minted unbacked
 [KelpDAO](https://governance.aave.com/t/rseth-incident-report-april-20-2026/24580)
 rsETH, which was deposited into Aave as collateral and used to borrow roughly $190M
 of real assets before the markets were frozen. Different protocol, different root
@@ -84,6 +93,9 @@ linear algebra to justify it.
 
 I'll write the coefficients as $k_c$, $k_d$, $k_\delta$; in the code they're
 `collateralCoeff`, `debtCoeff`, and `delevCoeff` (one pair per side, base and quote).
+$k_c$ scales collateral and $k_d$ scales debt; $k_\delta$ is the deleverage term — it
+stays $0$ until the first deleverage and then tracks how much collateral has been sold
+off per unit of debt. (More on it once we get there; for now just know it exists.)
 
 Each position stores a *scaled* collateral $\hat c$ and debt $\hat d$. (We called
 these `discounted` values in the code — an ambiguous name we never found a good

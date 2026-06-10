@@ -28,8 +28,8 @@ export const experience: Experience[] = [
     period: "2018 — 2021",
     location: "Moscow",
     points: [
-      "Worked on multilayer SLM (selective laser melting) simulations as part of my diploma research, contributing to the KiSSAM modeling effort.",
-      "Built Bash automation that chained Yade (powder-layer generation) and KiSSAM (melting simulation) into repeatable, looped multilayer simulation runs.",
+      "Worked on multilayer SLM (selective laser melting) simulations as part of my diploma research, contributing to the FaSTLaB, KiSSAM predecessor, modeling effort.",
+      "Built Bash automation that chained Yade (powder-layer generation) and FaSTLaB (melting simulation) into repeatable, looped multilayer simulation runs.",
     ],
   },
 ];

@@ -4,8 +4,13 @@ import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import rehypeHighlight from "rehype-highlight";
 import "katex/dist/katex.min.css";
 import { getPost, getPostSlugs, getAllPosts, formatDate } from "@/lib/posts";
+import AssetsGraphDiagram from "@/components/AssetsGraphDiagram";
+
+// Components made available to MDX (referenced by name in post content).
+const mdxComponents = { AssetsGraph: AssetsGraphDiagram };
 
 export function generateStaticParams() {
   return getPostSlugs().map((slug) => ({ slug }));
@@ -75,10 +80,11 @@ export default async function PostPage({
       <div className="prose border-t border-line pt-10">
         <MDXRemote
           source={post.content}
+          components={mdxComponents}
           options={{
             mdxOptions: {
               remarkPlugins: [remarkMath],
-              rehypePlugins: [rehypeKatex],
+              rehypePlugins: [rehypeKatex, rehypeHighlight],
             },
           }}
         />

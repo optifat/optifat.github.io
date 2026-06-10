@@ -1,41 +1,281 @@
 ---
 title: "From heuristics to MILP: rebuilding the Levva liquidity balancer"
 date: "2026-06-09"
-summary: "Reworking Levva's vault liquidity balancer from an earlier C# heuristic into a Rust MILP graph solver — and what that bought us in production."
-tags: ["rust", "optimization", "defi", "levva"]
-draft: true
+summary: "Reworking Levva's vault liquidity balancer from an earlier C# heuristic into a Rust solver that works out — globally, in one pass — exactly how much to move along each route. Modeled as flows on a graph and solved as a MILP; the moves come out cheapest as a bonus."
+tags: ["algorithm", "rust", "defi", "levva"]
 ---
 
-> **Draft — this one's yours to write, Pavel.** It's hidden from the blog index
-> while `draft: true` is set, but reachable by direct link. Remove that line in
-> the frontmatter to publish, and the "Read the writeup" link will appear on the
-> Levva Liquidity Balancer project automatically. The outline below is just
-> scaffolding — rewrite freely.
+A [`Levva vault`](https://github.com/levvafi/levva-vault-2.0) is a pool of user
+deposits in a single token — its *core asset* — that the protocol puts to work on the
+depositors' behalf; people add to it and redeem from it whenever they like. And it
+doesn't sit on idle cash. It spreads those assets across a set of external DeFi
+protocols (think lending markets, staking, swaps) according to a target strategy — so
+much here, so much there — while servicing withdrawals at the same time. Markets move,
+deposits and withdrawals arrive, target weights drift. Something has to decide, on a
+schedule, how to shuffle funds between protocols so the vault tracks its target and
+always keeps enough liquid to honor pending withdrawals — moving as little as possible,
+because every move costs *gas* (the fee to run a transaction on-chain) and *slippage*
+(the value you give up pushing size through a market).
 
-Allocating a vault's liquidity across target protocols and pending withdrawals
-sounds simple until you actually try to do it well. Here's how the Levva balancer
-went from a heuristic that mostly worked to a MILP solver that provably does.
+That something is the liquidity balancer. This post is about the version I rebuilt as
+a Rust service that asks one global question — *how much should move along each
+route?* — frames it as a flow on a graph, and hands it to a solver.
+The production code is internal, but it grew straight out of this open-sourced
+[proof-of-concept](https://github.com/optifat/levva-vault-liquidity-balancer) — the
+same core, with further improvements layered on since. Every code link below points
+at the PoC.
 
-## The earlier heuristic
+## The previous implementation
 
-_What the original C# heuristic did (one I'd worked on too), and where it fell
-short — the cases where "good enough" wasn't._
+The first version, in C#, had no graph. Each strategy was a hand-written list of
+assets, and for every asset three things: a target share of the vault, a threshold
+band around that share, and a priority. The Ethereum "Safe" strategy, for instance,
+put 45% in Aave USDC, 45% in a Morpho vault, and the rest in wrapped staked ETH —
+each with a 1–5% band.
 
-## Framing it as a graph
+Every asset also carried route scripts — an *entry* path and an *exit* path (and
+sometimes a faster exit) — spelled out as ordered steps. Aave was a one-liner (supply
+USDC / withdraw USDC); wrapped staked ETH was longer: enter by swapping USDC → WETH on
+Curve and staking with Lido, exit by *requesting* a Lido withdrawal, *claiming* it once
+ready, then swapping WETH → USDC back.
 
-_How the allocation problem maps onto a graph, and why that framing makes the
-constraints natural to express._
+On each cycle the balancer ran three passes — urgent withdrawals, then claims of
+already-requested withdrawals, then the rebalance — walking the assets in priority
+order. For each it compared the current share against its target ± threshold and, from
+that, decided to run the entry path, the exit path, or nothing, and how much: roughly
+delta × total assets, capped at what the band allowed.
 
-## The MILP formulation
+Stripped of the bookkeeping, the rebalance pass was essentially this loop:
 
-_Variables, constraints, objective. The mixed-integer linear program itself — the
-heart of the writeup._
+```csharp
+foreach (var asset in strategy.OrderBy(a => a.Priority))
+{
+    var share = ValueInUnderlying(asset) / totalAssets;
+    var delta = asset.TargetShare - share;            // + = needs more, - = too much
 
-## Building it in Rust
+    if (delta < -asset.Threshold)
+        Exit(asset, amount: -delta * totalAssets);    // too much — run the exit path
+    else if (delta > asset.Threshold)
+        Enter(asset, amount: delta * totalAssets);    // too little — run the entry path
+    else
+        Skip(asset);                                  // inside the band — leave it
+}
+```
 
-_Why Rust, the solver, and how the service fits into the rest of the system._
+It worked, but it was rigid: routes fixed per asset, decisions made one asset at a
+time in priority order, and *how much* to move falling out of the thresholds rather
+than any global view of the vault.
 
-## In production
+## Where it fell short
 
-_Accuracy gains over the heuristic, what running it live taught me, and what's
-still open._
+Two problems pushed me off it.
+
+**Fragmented moves.** Because each asset's move was sized by its own band and the
+assets were processed independently, in priority order, across three separate passes,
+nothing ever looked at the vault as a whole. A withdrawal that genuinely needed a big
+chunk pulled out of several protocols got chopped into a tail of small per-asset,
+per-cycle transactions instead of one coordinated move — more gas, more slippage, more
+chances to fail. We were already patching around it, which was a sign the model was
+wrong, not the numbers. The code even carried a `TODO` sketching the very redesign this
+became: compute all the deltas first, do withdrawals before deposits, act globally.
+
+**Withdrawal-request accounting.** Several protocols don't let you withdraw
+synchronously: the funds have to leave a queue first. Staked ETH is the classic case —
+unstaking from Lido isn't instant, so you *request* a withdrawal now and *claim* the
+tokens later, once they've matured, rather than getting them back in a single call.
+That meant tracking in-flight requests per asset, subtracting their pending amounts
+everywhere the share math touched them, and running a separate claim pass once they
+matured. It was fiddly, and when the accounting drifted it didn't just mis-size one
+move — it corrupted the share calculation the whole rebalance stood on.
+
+Both come back to the same root: every decision was *local*. Each asset minded its own
+band, and nothing reasoned about the vault as a whole. Closing that gap is exactly
+what the rewrite is for.
+
+Mostly, though, the old version was learning the hard way. We shipped the
+straightforward thing, then reality handed us cases we hadn't planned for — async
+withdrawals, fragmented moves, leftovers below threshold — and each got its own hotfix.
+The hotfixes piled into a tangle that was hard to follow, easy to break, and tiring to
+keep alive. At some point I caught myself patching the same class of bug for the third
+time and thought: *we can't keep living like this.* That was the moment to stop
+patching and rethink the whole thing — which is what the rest of this post is about.
+
+## The vault as a graph
+
+The rewrite starts by modeling the vault as a directed graph. Each node is an asset
+location — the core asset, plus the vault's position in each external protocol. Each
+edge is a permissible move from one location to another (deposit into a protocol,
+withdraw back to the core asset, a swap), carrying a cost. Edges aren't symmetric: a
+route $i \to j$ doesn't imply $j \to i$.
+
+One node kind is easy to miss but earns its place: a protocol's *not-yet-claimed*
+withdrawal request is a node of its own. Funds that have left a position but haven't
+landed back as the core asset yet get an explicit spot in the graph, instead of being
+smeared across the rest of the accounting — which is what retires most of the old
+withdrawal-tracking pain.
+
+That's the entire model of "what moves are possible," and it lives in
+[`AssetsGraph`](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/assets_graph/mod.rs)
+— a node list plus an adjacency matrix of optional, directed edges. An edge isn't just
+a marker that a route exists: it's a trait object. Each one implements
+[`AssetsGraphEdge`](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/assets_graph/assets_graph_edge.rs),
+whose whole job is `build_action(amount) -> AdapterActionArg` — turn "move *this much*
+along me" into *calldata*, the encoded instruction bytes a smart-contract call takes,
+for the vault's *adapter* (its plug-in module for talking to one particular external
+protocol) to carry out. So the graph isn't only a picture of the possibilities; every
+edge already knows how to execute itself once the solver decides how much should flow
+through it.
+
+<AssetsGraph />
+
+## Targets, withdrawals, and deltas
+
+A [strategy](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/strategy.rs)
+is a set of target weights per protocol, summing to one. From the strategy and the
+current on-chain state, the balancer computes a **delta** for every node — its target
+allocation minus its actual allocation — reserving a slice of pending withdrawals on
+the core asset so there's liquid to pay them out:
+
+- a positive delta means the node needs *more*;
+- a negative delta means it's holding *too much*;
+- by construction the deltas sum to zero — total value is conserved, it just needs to
+  sit in different places (in practice a hair off zero, only because of floating-point).
+
+That bookkeeping is
+[`construct_deltas_flows`](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/liquidity_balancer/core/mod.rs).
+There's also a floor: if the total drift is below a threshold, the balancer does
+nothing — it won't burn gas chasing a rounding error.
+
+So we know precisely *where* the money is off, node by node. What we still don't have
+is the part that actually matters: *how much* to push along each route so that every
+delta is realized at once and the amounts reconcile across the whole graph. That — the
+per-route amounts — is the answer the old heuristic could never get right. So how do
+you find it?
+
+## The magic of linear programming
+
+The tool for "find the values that satisfy a set of linear rules" is *linear
+programming* (LP). You write a set of linear constraints — equalities and inequalities
+— and ask for variable values that obey every one of them. Usually many assignments
+qualify, so you also hand it a linear objective and it returns the feasible one that
+minimizes it. For us that's the perfect fit: the constraints are what pin down the
+amounts we're after, and the objective just breaks ties among the assignments that work.
+Geometrically, the constraints carve out a convex region and the optimum always lands on
+one of its corners. That structure is why LPs are fast: decades-old, battle-tested
+solvers (simplex, interior-point) walk straight to that corner and return a *provably*
+optimal answer.
+
+Pure LP lets variables take any real value. Often you need some to be whole — or just
+$0$ or $1$: *is this route used, yes or no?* Pinning variables to integers makes it a
+**mixed-integer** linear program (MILP). Those binary switches are what let you express
+discrete things — a fixed cost per action, "use at most $k$ routes," on/off decisions —
+but they also make the problem genuinely harder: you can't just slide to a corner. Here
+solvers lean on branch-and-bound and cutting planes — a disciplined search that keeps
+solving LP relaxations and pruning branches. For problems our size, still effectively
+instant.
+
+The real magic is the separation of concerns. You describe *what* optimal means — the
+objective and the constraints — and hand it to a solver that has spent decades getting
+good at the search. You never write the search yourself: state the problem, get back the
+provably best answer.
+
+## Solving for the flows
+
+So here's our problem in that shape. The real question is mundane but crucial: *how
+much* should move along each route, so that every delta is realized at once and the
+amounts actually add up? That's a flow on the graph — the conservation constraints fix
+what the amounts have to be. Usually more than one set of flows is feasible, so we let
+an objective choose among them, and the natural pick is the cheapest. That makes it,
+technically, a *min-cost flow* — but the cost is the tiebreaker, not the point. The
+[solver](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/token_flow_solver/mod.rs)
+builds it with [`good_lp`](https://crates.io/crates/good_lp) over a COIN-OR backend:
+
+$$
+\begin{aligned}
+\text{minimize} \quad & \sum_{e} c_e\, f_e \\
+\text{s.t.} \quad & \sum_{e \,\to\, v} f_e \;-\; \sum_{e \,\text{from}\, v} f_e \;=\; \Delta_v \quad \text{for each node } v, \\
+& 0 \le f_e \le M\, y_e, \qquad y_e \in \{0, 1\}.
+\end{aligned}
+$$
+
+Each edge gets a continuous flow $f_e \ge 0$ and a binary $y_e$ saying whether the
+route is used at all, tied together by a big-$M$ constraint. Flow conservation pins
+each node's net inflow to its delta; the objective minimizes total weighted cost. The
+binaries are the seam where *discrete* costs belong — a fixed fee per action, a cap on
+how many routes you touch — even if the PoC currently weights every edge equally
+(`cost: 1.0`, with a `TODO` to wire in real costs). Solve it, and for each edge you
+get exactly how much to move.
+
+That's the whole reason for the rewrite, and it's worth being precise about why. The
+old heuristic sized each move *locally*, from one asset's threshold band, and those
+local amounts never had to add up to a coherent whole — which is exactly where it broke.
+The solver computes every amount *together*, from one set of conservation constraints,
+so they're consistent by construction. Getting the cheapest such amounts is a bonus on
+top. Concretely, that buys four things the old version couldn't:
+
+- **Consistent amounts, in one solve.** Every move's size comes out of a single global
+  computation, so they add up to a coherent rebalance — a big withdrawal emerges as one
+  optimal batch instead of death by a thousand small txs.
+- **Cheapest, for free.** For the costs you hand it, the plan is also provably the
+  lowest-cost way to hit the target — but that's gravy on top of getting the amounts
+  right.
+- **Withdrawals it can reason about.** In-flight requests are nodes, so funds mid-exit
+  are first-class in the math instead of corrupting it.
+- **A clean seam for real costs.** Per-action fees, route caps, and slippage penalties
+  drop into the objective or the binaries without disturbing anything else.
+
+## Ordering and executing the moves
+
+The solver hands back a set of flows — *who sends how much to whom* — but you can't
+fire them in arbitrary order. You can't deposit into protocol B with funds you haven't
+pulled out of A yet, and you can't claim a withdrawal before you've requested it. The
+flows have a dependency structure, and it has to be respected on-chain.
+
+That structure is just the flow graph itself: an edge $A \to B$ means $A$ has to happen
+before $B$. So [`topo_order`](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/liquidity_balancer/topo_order/mod.rs)
+runs [Kahn's algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm)
+over the non-zero flows and returns them as an ordered list of `(from, to, amount)`
+triples — every source drained before anything downstream spends it, so withdrawals and
+claims naturally land ahead of the deposits they fund. (If the flows ever contained a
+cycle it would bail rather than emit a bogus order; conservation plus the acyclic graph
+means they don't.)
+
+Then each ordered triple becomes a real call. The edge between `from` and `to` is an
+`AssetsGraphEdge`, so the balancer just asks it: `build_action(amount)`, and gets back
+an `AdapterActionArg` — the encoded instruction for the Levva vault v2 adapter. The
+ordered batch of those actions is shipped to an
+[executor](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/adapter_action_execution/mod.rs):
+a pool of workers, one command per vault over an `mpsc` channel, each holding its own
+RPC endpoint, gas-price ceiling, and signer. The worker calls
+`execute_adapter_actions(vault, actions)` and the moves go out on-chain, in order. The
+whole loop — read state, compute deltas, solve, sort, execute — runs
+[on a schedule](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/scheduled_job.rs),
+once per vault.
+
+## Quality-of-life wins
+
+A few things got nicer beyond the solver itself. The old strategies were C# classes —
+to change a target weight you edited code and redeployed. In the new service that all
+lives in a
+[database](https://github.com/optifat/levva-vault-liquidity-balancer/tree/c44f4819643303cf8aacafa24ce3331b6369b4e8/migrations):
+chains, vaults, their adapters, tracked assets, and target allocations are rows, so a
+strategy is *data* you can change without shipping a build. The assets graph itself is
+still hardcoded per chain — there's an
+[example](https://github.com/optifat/levva-vault-liquidity-balancer/blob/c44f4819643303cf8aacafa24ce3331b6369b4e8/src/chain_constants/hyperEvm/mod.rs)
+in the PoC, and prod does the same — so wiring it up from config too is an obvious next
+step rather than something that's done. Each vault gets its own balancer running on a
+schedule.
+
+## Why I open-sourced it
+
+This began as a side experiment — could framing the problem as a flow on a graph and
+handing it to a solver really beat the heuristic we already had? It could, by enough
+that it grew into the production service. Open-sourcing the proof-of-concept felt
+right, because the part worth sharing isn't the Levva-specific plumbing — the adapters,
+the vault calls, the chain constants. It's the shape of the idea: stop asking each
+asset to mind its own band, and instead model the possible moves as a graph, express
+the target as a vector of deltas, and let a solver work out *how much* flows along each
+edge — all at once, consistent by construction, cheapest as a bonus. That shape isn't
+specific to Levva, or even to DeFi; it travels to anything that has to redistribute a
+conserved quantity across a network under constraints. If reading this saves one person
+from hand-rolling the heuristic I started with, it was worth putting up.

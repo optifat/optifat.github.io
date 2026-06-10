@@ -34,10 +34,10 @@ export const projects: Project[] = [
     role: "Optimization · Rust",
     blurb: "A Rust MILP solver that allocates vault liquidity in production.",
     description:
-      "The service that decides how a Levva vault's liquidity is split across target protocols and pending withdrawal requests. I reworked it from an earlier C# heuristic — one I'd also worked on — into a Rust solver built on a mixed-integer linear programming (MILP) graph formulation, substantially more accurate and running in production. It began as a free-time experiment in MILP that I later hardened for prod.",
+      "The service that decides how a Levva vault's liquidity is split across target protocols and pending withdrawal requests. I reworked it from an earlier C# heuristic — one I'd also worked on — into a Rust solver built on a mixed-integer linear programming (MILP) graph formulation, substantially more accurate and running in production. It began as a free-time experiment in MILP that I later hardened for prod — the production version is built directly on the now-open-source proof-of-concept.",
     tags: ["Rust", "MILP", "Optimization", "DeFi"],
+    repo: "https://github.com/optifat/levva-vault-liquidity-balancer",
     writeupSlug: "levva-liquidity-balancer-milp",
-    closedSource: true,
     featured: true,
   },
   {
