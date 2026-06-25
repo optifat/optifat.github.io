@@ -1,12 +1,12 @@
 export const site = {
   name: "Pavel Smelov",
   shortName: "Pavel",
-  role: "Software Engineer",
+  role: "Protocol & Smart Contract Engineer",
   // One-line tagline used in the hero and metadata.
-  tagline: "Engineer building thoughtful, durable software for the web.",
+  tagline: "I build DeFi protocols from the math up.",
   // A short paragraph for the about hub.
   intro:
-    "I design and build software that's meant to last — clear systems, calm interfaces, and code other people can read. This is where I keep my work, my writing, and the occasional thing I'm still figuring out.",
+    "I build DeFi protocols end to end — deriving the protocol math, writing the smart contracts, and building the Rust and C# services that run them in production, across EVM, Solana, Substrate, and Stellar. This is where I keep my work, my writing, and the occasional derivation I'm still chasing.",
   location: "Remote",
   email: "pavsmel@hotmail.com",
   // Used for absolute URLs in metadata / sitemap. Change when you deploy.

@@ -1,5 +1,5 @@
 export const summary =
-  "DeFi protocol engineer building lending and leveraged-trading systems across EVM, Solana, Substrate, and Stellar. I like working top to bottom — deriving the protocol math, writing the smart contracts, and building the C# and Rust services that run them in production.";
+  "DeFi protocol engineer building lending and leveraged-trading systems across EVM, Solana, Substrate, and Stellar. I like working top to bottom — deriving the protocol math, writing the smart contracts, and building the C# and Rust services that run them in production. On the side, I've been learning zero-knowledge proof systems by building small ones and writing them up on my blog.";
 
 export type Experience = {
   role: string;
@@ -28,7 +28,7 @@ export const experience: Experience[] = [
     period: "2018 — 2021",
     location: "Moscow",
     points: [
-      "Worked on multilayer SLM (selective laser melting) simulations as part of my diploma research, contributing to the FaSTLaB, KiSSAM predecessor, modeling effort.",
+      "Worked on multilayer SLM (selective laser melting) simulations as part of my diploma research, contributing to the FaSTLaB, the KiSSAM predecessor, modeling effort.",
       "Built Bash automation that chained Yade (powder-layer generation) and FaSTLaB (melting simulation) into repeatable, looped multilayer simulation runs.",
     ],
   },
@@ -52,4 +52,5 @@ export const skills: { group: string; items: string[] }[] = [
   { group: "Chains", items: ["EVM", "Solana", "Substrate / Polkadot", "Stellar / Soroban", "Aptos", "Sui"] },
   { group: "Backend & Services", items: ["C# APIs & services", "EVM event handlers", "Transaction relaying", "SDKs"] },
   { group: "Modeling & Math", items: ["Linear algebra", "MILP / optimization (Rust)", "DeFi protocol design"] },
+  { group: "Cryptography", items: ["Merkle trees & proofs", "EIP-712 signatures", "Zero-knowledge proofs (exploratory)"] },
 ];
