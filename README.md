@@ -9,20 +9,21 @@ Vercel, Netlify, Cloudflare Pages, or GitHub Pages.
 ## Run
 
 ```bash
-npm run dev      # local dev at http://localhost:3000
-npm run build    # production build (static export of all routes)
-npm run start    # serve the production build
+pnpm install     # install dependencies
+pnpm dev         # local dev at http://localhost:3000
+pnpm build       # production build (static export of all routes)
+pnpm start       # serve the production build
 ```
 
 ## Where things live
 
-| What you want to change         | File                                   |
-| ------------------------------- | -------------------------------------- |
-| Name, role, bio, social links   | `src/lib/site.ts`                      |
-| Portfolio / projects            | `src/data/projects.ts`                 |
-| Résumé (experience, skills…)    | `src/data/cv.ts`                       |
-| Blog posts                      | `content/blog/*.mdx`                   |
-| Colors, fonts, prose styling    | `src/app/globals.css`                  |
+| What you want to change       | File                   |
+| ----------------------------- | ---------------------- |
+| Name, role, bio, social links | `src/lib/site.ts`      |
+| Portfolio / projects          | `src/data/projects.ts` |
+| Résumé (experience, skills…)  | `src/data/cv.ts`       |
+| Blog posts                    | `content/blog/*.mdx`   |
+| Colors, fonts, prose styling  | `src/app/globals.css`  |
 
 ### Adding a blog post
 
@@ -56,5 +57,6 @@ It appears on `/blog` automatically (sorted by date) with its own `/blog/<filena
 
 ## Deploy
 
-Push to GitHub and import the repo on [Vercel](https://vercel.com) — zero config. Or run
-`npm run build` and host the output anywhere that serves static files.
+Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds the static export and
+publishes it to GitHub Pages. Alternatively, run `pnpm build` and host the `out/` directory
+anywhere that serves static files (Vercel, Netlify, Cloudflare Pages, …).

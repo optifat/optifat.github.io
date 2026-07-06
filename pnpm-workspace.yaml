@@ -1,0 +1,6 @@
+# pnpm blocks dependency build scripts by default. These two native deps
+# (sharp: image processing, unrs-resolver: eslint's import resolver) need
+# theirs to compile their native binaries.
+allowBuilds:
+  sharp: true
+  unrs-resolver: true

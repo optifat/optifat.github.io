@@ -27,7 +27,11 @@ export async function generateMetadata({
   return {
     title: post.title,
     description: post.summary,
-    openGraph: { title: post.title, description: post.summary, type: "article" },
+    openGraph: {
+      title: post.title,
+      description: post.summary,
+      type: "article",
+    },
   };
 }
 
@@ -74,7 +78,9 @@ export default async function PostPage({
         >
           {post.title}
         </h1>
-        <p className="mt-4 text-lg leading-relaxed text-ink-soft">{post.summary}</p>
+        <p className="mt-4 text-lg leading-relaxed text-ink-soft">
+          {post.summary}
+        </p>
       </header>
 
       <div className="prose border-t border-line pt-10">
@@ -93,11 +99,17 @@ export default async function PostPage({
       {/* prev / next */}
       <nav className="mt-16 grid gap-4 border-t border-line pt-8 sm:grid-cols-2">
         {older ? (
-          <Link href={`/blog/${older.slug}`} className="group rounded-xl border border-line p-5 transition-colors hover:border-accent/50">
+          <Link
+            href={`/blog/${older.slug}`}
+            className="group rounded-xl border border-line p-5 transition-colors hover:border-accent/50"
+          >
             <span className="font-mono text-[0.68rem] uppercase tracking-wider text-muted">
               ← Older
             </span>
-            <p className="mt-1 font-display text-lg text-ink group-hover:text-accent" style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}>
+            <p
+              className="mt-1 font-display text-lg text-ink group-hover:text-accent"
+              style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}
+            >
               {older.title}
             </p>
           </Link>
@@ -105,11 +117,17 @@ export default async function PostPage({
           <span />
         )}
         {newer ? (
-          <Link href={`/blog/${newer.slug}`} className="group rounded-xl border border-line p-5 text-right transition-colors hover:border-accent/50">
+          <Link
+            href={`/blog/${newer.slug}`}
+            className="group rounded-xl border border-line p-5 text-right transition-colors hover:border-accent/50"
+          >
             <span className="font-mono text-[0.68rem] uppercase tracking-wider text-muted">
               Newer →
             </span>
-            <p className="mt-1 font-display text-lg text-ink group-hover:text-accent" style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}>
+            <p
+              className="mt-1 font-display text-lg text-ink group-hover:text-accent"
+              style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}
+            >
               {newer.title}
             </p>
           </Link>

@@ -1,0 +1,15 @@
+# Build output & deps
+.next/
+out/
+node_modules/
+
+# Lockfile is tool-managed
+pnpm-lock.yaml
+
+# MDX blog posts are hand-formatted prose (math, custom components) — leave them alone
+content/
+
+# Tool-/agent-managed and personal working docs
+.claude/
+AGENTS.md
+Recommendations.md

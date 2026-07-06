@@ -8,7 +8,10 @@ export default function SiteFooter() {
       <div className="mx-auto max-w-5xl px-6 py-12">
         <div className="flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="font-display text-2xl text-ink" style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}>
+            <p
+              className="font-display text-2xl text-ink"
+              style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}
+            >
               Let&rsquo;s build something.
             </p>
             <a

@@ -12,6 +12,7 @@ export type PostMeta = {
   tags: string[];
   readingTime: number; // minutes
   draft: boolean; // hidden from listings, still reachable by direct URL
+  featured: boolean; // pinned to the top of home "Selected writing"
 };
 
 export type Post = PostMeta & { content: string };
@@ -33,6 +34,7 @@ function parseFile(fileName: string): Post {
     tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
     readingTime: readingTime(content),
     draft: Boolean(data.draft),
+    featured: Boolean(data.featured),
     content,
   };
 }
@@ -58,7 +60,11 @@ export function getAllPosts(): PostMeta[] {
 export function getPost(slug: string): Post | null {
   const mdx = path.join(POSTS_DIR, `${slug}.mdx`);
   const md = path.join(POSTS_DIR, `${slug}.md`);
-  const file = fs.existsSync(mdx) ? `${slug}.mdx` : fs.existsSync(md) ? `${slug}.md` : null;
+  const file = fs.existsSync(mdx)
+    ? `${slug}.mdx`
+    : fs.existsSync(md)
+      ? `${slug}.md`
+      : null;
   if (!file) return null;
   return parseFile(file);
 }

@@ -5,7 +5,8 @@ import PageHeader from "@/components/PageHeader";
 
 export const metadata: Metadata = {
   title: "Writing",
-  description: "Essays and notes on engineering, design, and the craft of building software.",
+  description:
+    "Essays and notes on engineering, design, and the craft of building software.",
 };
 
 export default function BlogPage() {

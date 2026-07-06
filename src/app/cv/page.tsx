@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { site } from "@/lib/site";
-import { summary, experience, education, skills } from "@/data/cv";
+import { summary, experience, education, skills, writing } from "@/data/cv";
 import PageHeader from "@/components/PageHeader";
 
 export const metadata: Metadata = {
@@ -10,14 +11,20 @@ export const metadata: Metadata = {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="eyebrow sticky top-20 hidden self-start lg:block">{children}</h2>
+    <h2 className="eyebrow sticky top-20 hidden self-start lg:block">
+      {children}
+    </h2>
   );
 }
 
 export default function CVPage() {
   return (
     <div className="mx-auto max-w-4xl px-6">
-      <PageHeader eyebrow="Curriculum Vitae" title="Experience" lead={summary} />
+      <PageHeader
+        eyebrow="Curriculum Vitae"
+        title="Experience"
+        lead={summary}
+      />
 
       <div className="flex items-center gap-4 pb-12">
         <a
@@ -44,7 +51,9 @@ export default function CVPage() {
                 >
                   {job.role}
                 </h3>
-                <span className="font-mono text-xs text-faint">{job.period}</span>
+                <span className="font-mono text-xs text-faint">
+                  {job.period}
+                </span>
               </div>
               <p className="mt-0.5 text-ink-soft">
                 <span className="text-accent">{job.company}</span>
@@ -52,7 +61,10 @@ export default function CVPage() {
               </p>
               <ul className="mt-3 space-y-2">
                 {job.points.map((pt, i) => (
-                  <li key={i} className="relative pl-5 leading-relaxed text-ink-soft">
+                  <li
+                    key={i}
+                    className="relative pl-5 leading-relaxed text-ink-soft"
+                  >
                     <span className="absolute left-0 top-[0.6em] h-1.5 w-1.5 rotate-45 rounded-[1px] bg-accent" />
                     {pt}
                   </li>
@@ -72,8 +84,28 @@ export default function CVPage() {
               <h3 className="font-mono text-xs uppercase tracking-wider text-muted">
                 {s.group}
               </h3>
-              <p className="mt-2 leading-relaxed text-ink">{s.items.join(", ")}</p>
+              <p className="mt-2 leading-relaxed text-ink">
+                {s.items.join(", ")}
+              </p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Selected writing */}
+      <section className="grid gap-2 border-t border-line py-12 lg:grid-cols-[200px_1fr]">
+        <SectionLabel>Selected writing</SectionLabel>
+        <div className="space-y-6">
+          {writing.map((w) => (
+            <Link key={w.slug} href={`/blog/${w.slug}`} className="group block">
+              <h3
+                className="font-display text-xl text-ink transition-colors group-hover:text-accent"
+                style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}
+              >
+                {w.title}
+              </h3>
+              <p className="mt-0.5 text-ink-soft">{w.blurb}</p>
+            </Link>
           ))}
         </div>
       </section>
@@ -83,9 +115,15 @@ export default function CVPage() {
         <SectionLabel>Education</SectionLabel>
         <div className="space-y-6">
           {education.map((e) => (
-            <div key={e.degree} className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
+            <div
+              key={e.degree}
+              className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between"
+            >
               <div>
-                <h3 className="font-display text-xl text-ink" style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}>
+                <h3
+                  className="font-display text-xl text-ink"
+                  style={{ fontVariationSettings: '"opsz" 40, "WONK" 0' }}
+                >
                   {e.degree}
                 </h3>
                 <p className="text-ink-soft">{e.school}</p>

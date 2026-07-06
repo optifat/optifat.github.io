@@ -11,8 +11,8 @@ export default function NotFound() {
         Lost the thread.
       </h1>
       <p className="mt-5 max-w-md text-lg text-ink-soft">
-        This page doesn&rsquo;t exist — or it wandered off. Let&rsquo;s get you back to
-        something real.
+        This page doesn&rsquo;t exist — or it wandered off. Let&rsquo;s get you
+        back to something real.
       </p>
       <Link
         href="/"

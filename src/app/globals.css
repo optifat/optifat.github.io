@@ -82,7 +82,10 @@ body {
 /* Fraunces optical sizing for big display text. */
 .font-display {
   font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 0, "WONK" 0, "opsz" 144;
+  font-variation-settings:
+    "SOFT" 0,
+    "WONK" 0,
+    "opsz" 144;
   letter-spacing: -0.02em;
 }
 

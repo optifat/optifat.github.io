@@ -12,7 +12,10 @@ export default function PageHeader({
       <p className="eyebrow rise">{eyebrow}</p>
       <h1
         className="font-display rise mt-4 text-5xl text-ink sm:text-6xl"
-        style={{ animationDelay: "70ms", fontVariationSettings: '"opsz" 144, "SOFT" 0, "WONK" 0' }}
+        style={{
+          animationDelay: "70ms",
+          fontVariationSettings: '"opsz" 144, "SOFT" 0, "WONK" 0',
+        }}
       >
         {title}
       </h1>

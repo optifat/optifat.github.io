@@ -5,7 +5,11 @@ import { getAllPosts } from "@/lib/posts";
 import { ProjectCard, PostListItem } from "@/components/Cards";
 
 export default function Home() {
-  const posts = getAllPosts().slice(0, 3);
+  // Pinned (featured) posts first, then most-recent; getAllPosts() is date-sorted and
+  // Array.prototype.sort is stable, so date order is preserved within each group.
+  const posts = [...getAllPosts()]
+    .sort((a, b) => Number(b.featured) - Number(a.featured))
+    .slice(0, 3);
 
   return (
     <div className="mx-auto max-w-5xl px-6">
@@ -15,14 +19,20 @@ export default function Home() {
         <div
           aria-hidden
           className="pointer-events-none absolute -top-24 right-0 -z-10 h-72 w-72 rounded-full opacity-50 blur-3xl"
-          style={{ background: "radial-gradient(closest-side, var(--accent-ghost), transparent)" }}
+          style={{
+            background:
+              "radial-gradient(closest-side, var(--accent-ghost), transparent)",
+          }}
         />
         <p className="eyebrow rise" style={{ animationDelay: "0ms" }}>
           {site.role} · {site.location}
         </p>
         <h1
           className="font-display rise mt-5 max-w-3xl text-5xl leading-[1.02] text-ink sm:text-7xl"
-          style={{ animationDelay: "80ms", fontVariationSettings: '"opsz" 144, "SOFT" 0, "WONK" 0' }}
+          style={{
+            animationDelay: "80ms",
+            fontVariationSettings: '"opsz" 144, "SOFT" 0, "WONK" 0',
+          }}
         >
           {site.tagline}
         </h1>
@@ -60,7 +70,10 @@ export default function Home() {
       <section className="border-t border-line py-16">
         <div className="flex items-baseline justify-between">
           <h2 className="eyebrow">Selected work</h2>
-          <Link href="/work" className="link-underline text-sm text-muted hover:text-ink">
+          <Link
+            href="/work"
+            className="link-underline text-sm text-muted hover:text-ink"
+          >
             All projects →
           </Link>
         </div>
@@ -74,8 +87,11 @@ export default function Home() {
       {/* ---- Recent writing ---- */}
       <section className="border-t border-line py-16">
         <div className="flex items-baseline justify-between">
-          <h2 className="eyebrow">Recent writing</h2>
-          <Link href="/blog" className="link-underline text-sm text-muted hover:text-ink">
+          <h2 className="eyebrow">Selected writing</h2>
+          <Link
+            href="/blog"
+            className="link-underline text-sm text-muted hover:text-ink"
+          >
             All posts →
           </Link>
         </div>

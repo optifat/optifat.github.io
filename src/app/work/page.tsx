@@ -41,7 +41,9 @@ export default function WorkPage() {
               </div>
 
               <div>
-                <p className="text-lg leading-relaxed text-ink-soft">{p.description}</p>
+                <p className="text-lg leading-relaxed text-ink-soft">
+                  {p.description}
+                </p>
                 <div className="mt-5 flex flex-wrap gap-1.5">
                   {p.tags.map((t) => (
                     <Tag key={t}>{t}</Tag>
@@ -51,7 +53,9 @@ export default function WorkPage() {
                   {p.link && (
                     <a
                       href={p.link.href}
-                      target={p.link.href.startsWith("http") ? "_blank" : undefined}
+                      target={
+                        p.link.href.startsWith("http") ? "_blank" : undefined
+                      }
                       rel="noreferrer"
                       className="link-underline font-medium text-ink hover:text-accent"
                     >
@@ -74,6 +78,16 @@ export default function WorkPage() {
                       className="link-underline text-muted hover:text-ink"
                     >
                       Source
+                    </a>
+                  )}
+                  {p.audit && (
+                    <a
+                      href={p.audit.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="link-underline font-medium text-ink hover:text-accent"
+                    >
+                      {p.audit.label} ↗
                     </a>
                   )}
                   {p.closedSource && !p.repo && (
