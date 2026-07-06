@@ -9,14 +9,14 @@ export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages: MetadataRoute.Sitemap = nav.map((item) => ({
-    url: `${base}${item.href === "/" ? "" : item.href}`,
+    url: `${base}${item.href}${item.href === "/" ? "" : "/"}`,
     changeFrequency: item.href === "/blog" ? "weekly" : "monthly",
     priority: item.href === "/" ? 1 : 0.7,
   }));
 
   // Drafts are excluded (getAllPosts filters them), so they stay unindexed.
   const posts: MetadataRoute.Sitemap = getAllPosts().map((post) => ({
-    url: `${base}/blog/${post.slug}`,
+    url: `${base}/blog/${post.slug}/`,
     lastModified: post.date,
     changeFrequency: "monthly",
     priority: 0.6,
