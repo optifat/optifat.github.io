@@ -1,0 +1,304 @@
+---
+title: "The coefficient that wouldn't stay small: socializing bad debt across many tokens"
+date: "2026-07-01"
+summary: "A companion to the Marginly math. Spreading one borrower's bad debt across a whole pool collapses, in the single-token case, into a tidy 2×2 coefficient you apply globally — the same scaled-balance trick. With many tokens at different prices it looks like it balloons into an ever-growing tensor. It doesn't have to: with the right state it stays a finite matrix — just no longer a tidy one."
+tags: ["math", "defi", "equilibrium", "marginly"]
+---
+
+I keep promising this one. In [the Marginly post](/blog/marginly-deleverage-coefficients) a
+pool-wide operation turned out to be a 2×2 matrix you could apply with a couple of global
+numbers; in both [zero-knowledge](/blog/zero-knowledge-from-scratch-pedersen)
+[posts](/blog/bailsmen-on-a-snark) I waved at the same idea for Equilibrium's bailsmen — the
+backstop pool whose members absorb liquidated borrowers' leftover bad debt pro-rata — and
+each time flagged a catch: a bailsman's balance lives in *many tokens at different prices*,
+which is "a story for another day." I finally dug the derivation out of an old Overleaf file.
+Here's the story.
+
+A fair warning before we start: this is the most math-heavy post in the series — matrices,
+tensor indices, the lot — and I tried and failed to slim it down. The algebra *is* the story
+here; there's no honest shortcut around it. If that's not your idea of fun, the prose around
+each formula carries the gist on its own, and the closing section has the one-sentence moral.
+
+## The single-token case: a 2×2, just like Marginly
+
+A liquidation hands the pool a borrower's leftover collateral and debt, and the pool spreads
+them across bailsmen in proportion to each one's stake. For a bailsman holding collateral $c$
+and debt $d$ (in dollars), with the pool's total collateral $C = \sum_b c_b$ and the
+liquidated amounts $L_c, L_d$, the share is collateral-weighted:
+
+$$
+c' = c + L_c \cdot \frac{c}{C}, \qquad d' = d + L_d \cdot \frac{c}{C}.
+$$
+
+The thing to notice — the same move that makes the Marginly trick work — is that this is
+*linear* in $(c, d)$, so it's a single matrix:
+
+$$
+\begin{pmatrix} c' \\ d' \end{pmatrix}
+=
+\begin{pmatrix} 1 + \dfrac{L_c}{C} & 0 \\[6pt] \dfrac{L_d}{C} & 1 \end{pmatrix}
+\begin{pmatrix} c \\ d \end{pmatrix}.
+$$
+
+And the entries depend only on *global* quantities — the liquidated amounts and the pool
+total — never on *which* bailsman. So one matrix $M$ updates **everyone** by left-multiplication,
+and a second liquidation is just another global matrix: $M_2 M_1$ is still 2×2. You never
+touch individual balances at all — you keep each bailsman's $(c, d)$ in scaled form, bump a
+couple of shared coefficients per liquidation, and recover any actual balance on read. A
+pool-wide payout in $O(1)$. This is exactly the scaled-balance / coefficient idea, and in one
+dimension it's beautiful.
+
+## Adding tokens
+
+Now let bailsmen hold many tokens — call it $K$ of them. From here I'll index everything by a
+*kind* and a *token*, and keep the two index families visually distinct:
+
+- $s, t, u \in \{c, d\}$ — the **kind**: collateral or debt (2 values);
+- $i, j, l \in \{1, \dots, K\}$ — the **token** ($K$ values);
+
+with a repeated index summed (Einstein convention). So $b_{si}$ is the quantity of token $i$ a
+bailsman holds as kind $s$, and $p^{i}$ is the price of token $i$. A bailsman's dollar
+collateral is then $b_{ci}\,p^{i}$ (summed over tokens), and $b_{di}\,p^{i}$ their dollar debt.
+
+The honest state is the whole per-token block $b_{si}$. Writing $\Gamma$ for the coefficient
+tensor, the natural way to write one distribution is
+
+$$
+b'_{si} = \Gamma_{si}{}^{t}\, b_{tj}\, p^{j}.
+$$
+
+Read it left to right — collapse the balance against prices ($b_{tj}\,p^{j}$ is
+the dollar amount of each kind $t$), then let the coefficients spread the liquidated basket
+back out. And it's where I got stuck.
+
+## Where it blows up
+
+Apply a *second* distribution — recursively, with the new prices $\tilde p$ that now prevail
+(and its own coefficient $\Gamma'$). It reduces the new balance to dollars, then spreads again:
+
+$$
+b''_{si} = \Gamma'_{si}{}^{t}\,\big(\Gamma_{tj}{}^{u}\,b_{ul}\,p^{l}\big)\,\tilde p^{\,j}.
+$$
+
+Tensor multiplication is associative, so regroup it into "new coefficients" × "balance" ×
+"new prices":
+
+$$
+b''_{si} = \big(\Gamma'_{si}{}^{t}\,\Gamma_{tj}{}^{u}\big)\, b_{ul}\, \big(p^{l}\,\tilde p^{\,j}\big),
+$$
+
+and read off what each grouped factor became:
+
+$$
+\Gamma'_{si}{}^{t}\,\Gamma_{tj}{}^{u} = \Gamma''_{sij}{}^{u},
+$$
+
+$$
+p^{l}\,\tilde p^{\,j} = \Pi^{lj}.
+$$
+
+Both ranks went **up** — tensor rank, the number of indices, not the matrix-rank sense I'll
+use later. The coefficient grew an extra *token* index
+($\Gamma_{si}{}^{t} \to \Gamma''_{sij}{}^{u}$); the price vector became a price *matrix*
+$\Pi^{lj}$ — an outer product of this distribution's prices with the last one's. Another
+liquidation lifts them again. Each step has to remember another generation of prices, so the
+state you'd need to carry grows without bound. My conclusion at the time, written in the
+margin: *Equilibrium-like bailsmen distribution most likely can't be expressed with a
+constant-size set of coefficients.* I shelved it.
+
+## The mistake was the shape, not the problem
+
+Years later I came back to it — while drafting this very post, and I should be honest about
+how. I handed the derivation to an AI and asked it to try to knock my conclusion down. It
+did, and the reframing that follows is mostly its doing, not some shower-thought of mine: it
+kept pushing on the one step I'd waved through. The tell is right there in that natural-looking
+tensor equation. It tries to rebuild the *new* per-token balance (a $2K$-dimensional thing)
+out of $\Gamma_{si}{}^{t}(b_{tj}\,p^{j})$ — that is, out of the *two-dimensional* dollar
+reduction $b_{tj}\,p^{j}$ of the *old* balance (two-dimensional because it's one number per
+kind). But the new per-token balance is
+
+$$
+b'_{si} = b_{si} + (\text{weight})\,L_{si},
+$$
+
+and that first term — the old per-token balance, carried through unchanged — is *not*
+recoverable from its dollar reduction once you've summed over tokens. By collapsing to dollars
+I threw away exactly the part the next step needs, and then paid for it by smuggling per-token
+structure (and every generation of prices) back in through ever-fatter coefficients. The rank
+inflation was the receipt for information I'd discarded a step earlier.
+
+Keep the information instead. Don't collapse the balance to dollars at all — let the
+coefficient act on the *whole* balance $b_{tj}$ (quantities, which don't depend on price). One
+distribution becomes
+
+$$
+b'_{si} = M_{si}{}^{tj}\,b_{tj},
+$$
+
+$$
+M_{si}{}^{tj} = \delta_s^{t}\,\delta_i^{j} \;+\; \frac{1}{C}\,L_{si}\,\delta^{t}_{c}\,p^{j}.
+$$
+
+Two terms, and the whole argument lives in them. The first, $\delta_s^{t}\delta_i^{j}$ — a
+product of [Kronecker deltas](https://en.wikipedia.org/wiki/Kronecker_delta) — is the
+identity (the index-notation form of the identity matrix $I$): it passes both the kind
+($s = t$) and the token ($i = j$) straight through, the passthrough I'd thrown away by
+reducing to dollars. The second is the distribution: $\delta^{t}_{c}\,p^{j}$ contracts the
+balance down to the bailsman's dollar collateral ($\delta^{t}_{c}$ picks the collateral kind,
+$p^{j}$ sums over tokens), the $1/C$ turns it into the weight $\,p^{j}b_{cj}/C$, and $L_{si}$
+sprays the liquidated basket back across tokens. (It's a *rank-one* update: the correction is
+an outer product of the output basket $L_{si}$ with the input covector $\delta^{t}_{c}\,p^{j}$.)
+
+The difference from where I got stuck is exactly **one index — the token index on the
+input**. My old $\Gamma_{si}{}^{t}$ took a single input index $t$, a *kind*; it could only eat
+the dollar reduction. $M_{si}{}^{tj}$ takes an input *kind and token* $(t, j)$, so the token
+identity $\delta_i^{j}$ can carry the per-token balance through. That one missing token index
+is the entire repair.
+
+Now compose. A second distribution — new prices $\tilde p^{\,l}$, basket $\tilde L_{si}$,
+total $\tilde C$ — is another operator of the same shape, and they chain by plain contraction:
+
+$$
+b''_{si} = \tilde M_{si}{}^{tj}\,M_{tj}{}^{ul}\,b_{ul}.
+$$
+
+The composed coefficient $\tilde M_{si}{}^{tj}\,M_{tj}{}^{ul}$ still has one (kind, token) pair
+down and one up — *the same shape as a single $M$*. Nothing grew. That's the whole contrast
+with the shelved version, where composing grew the coefficient a token index
+($\Gamma_{si}{}^{t} \to \Gamma''_{sij}{}^{u}$) and turned the price vector into a price *matrix*
+$\Pi^{lj}$. The inflation was the cost of the missing index; restore it and the prices never
+escape — each distribution's prices are spent forming its own $M$, and only *today's* prices
+touch a read, applied once at the very end when you turn quantities back into dollars. The
+total $C$ each step needs is a running aggregate, not a loop over bailsmen.
+
+So the constant-size coefficient does exist: a single operator $M_{si}{}^{tj}$ with $2K$
+inputs and $2K$ outputs, where $K$ is the number of *tokens* (a handful) — emphatically **not**
+the number of bailsmen (the thousands you were trying not to touch). The same $M$ settles
+every bailsman at once. The dead end I'd talked myself into was just the wrong coordinates.
+
+## A worked example: two bailsmen, two tokens, two liquidations
+
+Concrete numbers make the "one operator" claim easy to see. Two tokens, ETH and USDT; two
+bailsmen, each holding collateral and debt per token:
+
+- **A** — collateral $(2\ \text{ETH},\ 0\ \text{USDT})$, debt $(0\ \text{ETH},\ 1000\ \text{USDT})$
+- **B** — collateral $(1\ \text{ETH},\ 2000\ \text{USDT})$, debt $(0,\ 0)$
+
+**Liquidation 1**, at prices ETH = 2000 USD, USDT = 1 USD. Both bailsmen hold 4000 USD of
+collateral, so the pool total is 8000 USD and each one's weight is $4000/8000 = \tfrac12$.
+The liquidated basket is $1\ \text{ETH}$ of collateral and $1000\ \text{USDT}$ of debt; each
+absorbs half:
+
+- **A** → collateral $(2.5\ \text{ETH},\ 0)$, debt $(0,\ 1500\ \text{USDT})$
+- **B** → collateral $(1.5\ \text{ETH},\ 2000\ \text{USDT})$, debt $(0,\ 500\ \text{USDT})$
+
+**Liquidation 2** — and now ETH drops to 1000 USD. Re-pricing the *same token quantities*, A's
+collateral is now worth 2500 USD and B's 3500 USD, a total of 6000 USD, so the weights have
+**shifted**: A falls to $2500/6000 = \tfrac{5}{12}$, B rises to $\tfrac{7}{12}$. (That's the
+price change doing its job — ETH-heavy A now carries less of the pool, so it absorbs less.)
+The liquidated basket is $600\ \text{USDT}$ of collateral, no debt:
+
+- **A** → collateral $(2.5\ \text{ETH},\ 250\ \text{USDT})$ $\;(250 = \tfrac{5}{12}\cdot 600)$
+- **B** → collateral $(1.5\ \text{ETH},\ 2350\ \text{USDT})$ $\;(2350 = 2000 + \tfrac{7}{12}\cdot 600)$
+
+Now the operator view. Order the state as
+$(\text{coll}_{\text{ETH}},\ \text{coll}_{\text{USDT}},\ \text{debt}_{\text{ETH}},\ \text{debt}_{\text{USDT}})$.
+Each liquidation is one $4\times4$ matrix $M = I + \tfrac{1}{C}\,\mathbf{w}\,\mathbf{q}^{\top}$,
+where $I$ is the identity matrix, $\mathbf{w}$ is the liquidated basket and $\mathbf{q}$ is
+the prices (zero on the debt slots). Liquidation 1, with $C = 8000$, works out to:
+
+$$
+M_1 = I + \frac{1}{8000}\begin{pmatrix}1\\0\\0\\1000\end{pmatrix}\!\begin{pmatrix}2000&1&0&0\end{pmatrix}
+= \begin{pmatrix}
+1.25 & 0.000125 & 0 & 0\\
+0 & 1 & 0 & 0\\
+0 & 0 & 1 & 0\\
+250 & 0.125 & 0 & 1
+\end{pmatrix}.
+$$
+
+Multiply each bailsman's *starting* balance by $M_1$ and you land on the post-liquidation-1
+balances:
+
+$$
+M_1 \begin{pmatrix}2\\0\\0\\1000\end{pmatrix} = \begin{pmatrix}2.5\\0\\0\\1500\end{pmatrix},
+$$
+
+$$
+M_1 \begin{pmatrix}1\\2000\\0\\0\end{pmatrix} = \begin{pmatrix}1.5\\2000\\0\\500\end{pmatrix}
+$$
+
+— A's $2.5$ ETH collateral and $1500$ USDT debt, B's $1.5$ ETH / $2000$ USDT collateral and
+$500$ USDT debt, exactly as before. Liquidation 2, with $C = 6000$, is:
+
+$$
+M_2 = I + \frac{1}{6000}\begin{pmatrix}0\\600\\0\\0\end{pmatrix}\!\begin{pmatrix}1000&1&0&0\end{pmatrix}
+= \begin{pmatrix}
+1 & 0 & 0 & 0\\
+100 & 1.1 & 0 & 0\\
+0 & 0 & 1 & 0\\
+0 & 0 & 0 & 1
+\end{pmatrix}.
+$$
+
+Fold both liquidations into a single matrix:
+
+$$
+M_2 M_1 =
+\begin{pmatrix}
+1.25 & 0.000125 & 0 & 0\\
+125 & 1.1125 & 0 & 0\\
+0 & 0 & 1 & 0\\
+250 & 0.125 & 0 & 1
+\end{pmatrix},
+$$
+
+and apply it directly to the *starting* balances:
+
+$$
+M_2 M_1 \begin{pmatrix}2\\0\\0\\1000\end{pmatrix} = \begin{pmatrix}2.5\\250\\0\\1500\end{pmatrix},
+$$
+
+$$
+M_2 M_1 \begin{pmatrix}1\\2000\\0\\0\end{pmatrix} = \begin{pmatrix}1.5\\2350\\0\\500\end{pmatrix}
+$$
+
+— exactly A's and B's finishing balances. Two liquidations collapsed into one $4\times4$ that
+settles *every* bailsman in a single multiply, and it would still be $4\times4$ with a
+thousand liquidations behind it or a million bailsmen in front of it. (The wild spread in the
+entries — $0.000125$ sitting next to $250$ — is just the $2000{:}1$ ETH/USDT price ratio
+showing through; the load-bearing facts are only that the box stayed $4\times4$ and the
+arithmetic lands.)
+
+## The catch, and why it stayed on paper
+
+This is where I keep myself honest, because "it works" is doing some lifting. In one
+dimension the coefficient was three numbers. Here it's a $2K \times 2K$ matrix — *quadratic*
+in the number of supported tokens just to store, and *cubic* to push around: multiplying two
+$2K \times 2K$ matrices is $O(K^3)$, and a deposit or withdrawal needs the coefficient's
+inverse, also $O(K^3)$. (A single liquidation is only a rank-one update, so you can fold one
+in at $O(K^2)$ if you're careful — but the general bookkeeping is cubic.) After a few
+compositions the tidy rank-one structure is gone, and you're storing a dense matrix on-chain,
+updating it per liquidation, and inverting it whenever someone deposits or withdraws (to push
+their change back into scaled form). None of that is exotic, but none of it is *free*, and
+fixed-point precision over many composed multiplications is its own small nightmare.
+
+Which lands me back where the [SNARK post](/blog/bailsmen-on-a-snark) did. The single-token
+trick is O(1) and nearly weightless. The multi-token version is still O(1) *in the number of
+bailsmen* — the thing that actually hurt — but it trades a handful of scalars for a matrix and
+a pile of bookkeeping, and whether that beats the plain chunked queue Equilibrium already ran
+is exactly the comparison I never made. I technically still could — the Equilibrium source is
+public to this day — but the question stopped mattering a long time ago, and outside of
+scientific curiosity I'm too lazy to benchmark a dead one. My honest guess is the same as it
+was for the SNARK: probably not worth it. It stayed a derivation for a reason.
+
+## What it comes down to
+
+The thing I like about this one is what it did to the earlier post. "It's just a 2×2 matrix"
+felt like the *answer* in the single-token world. It was really a special case — the place
+where a general truth happens to be small enough to look tidy. Add a second dimension and the
+2×2 stretches into a $2K \times 2K$; the elegance was a property of $K = 1$, not of the idea.
+The idea — *a pool-wide rewrite is one global linear map you apply lazily* — survives intact.
+It just stops being small enough to fit in your head — and a good part of engineering is
+deciding whether something you can no longer hold whole is still worth building.
+

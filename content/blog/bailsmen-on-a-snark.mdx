@@ -1,0 +1,243 @@
+---
+title: "From a socket to a SNARK: proving the bailsmen payout instead of redoing it"
+date: "2026-06-25"
+summary: "The second post in my zero-knowledge series. I take the problem that sent me looking — Equilibrium's bailsmen payout, which meant looping over every user on-chain — and hand it to a real proof system: a Groth16 SNARK in Rust. It works, a cheating prover gets caught, and the off-chain dream half-comes-true in an instructive way."
+tags: ["zk", "cryptography", "rust", "equilibrium"]
+---
+
+[Last time](/blog/zero-knowledge-from-scratch-pedersen) I learned the primitives of
+zero-knowledge by hand: Pedersen commitments and interactive Sigma protocols, run as two
+Rust programs passing numbers across a TCP socket. It taught me the ideas, but it couldn't
+do the thing I actually wanted. The protocols were *interactive* (a live verifier had to
+sit on the other end), *bespoke* (a hand-written dance per statement), and not *succinct*.
+This post is the next rung: I take the original problem to a real proof system and see how
+much of the dream survives.
+
+## The problem, one more time
+
+The thing that sent me looking was a payout. Equilibrium had **bailsmen** — users who
+pledged into a shared pool and, when a borrower went bad, absorbed that borrower's debt and
+collateral, split across the pool in proportion to each one's stake. Spreading one
+liquidation across the whole pool is far too much to settle in a single transaction, so it
+wasn't: each liquidation
+[pushed a *distribution* onto a queue](https://github.com/eq-lab/equilibrium/blob/ddab6da9fdbca80c7988b21c3eff96712d576f64/pallets/eq-bailsman/src/lib.rs#L394),
+and an
+[off-chain worker](https://github.com/eq-lab/equilibrium/blob/ddab6da9fdbca80c7988b21c3eff96712d576f64/pallets/eq-bailsman/src/lib.rs#L323)
+quietly
+[submitted transactions](https://github.com/eq-lab/equilibrium/blob/ddab6da9fdbca80c7988b21c3eff96712d576f64/pallets/eq-bailsman/src/lib.rs#L198)
+every block that ground bailsmen through that queue, chunk by chunk, catching each one up to
+the latest payout.
+
+It worked — but it never stopped costing. Every one of those automatic transactions burned
+*weight* (Substrate's metering of on-chain work — its analogue of gas), block after block,
+and we wanted that bill smaller. The zero-knowledge dream was exactly shaped to the
+complaint: do the heavy per-bailsman arithmetic *off* chain, then post one short **proof**
+that you did it correctly, and let the chain check the proof instead of re-running the work.
+So: can I express "the payout was computed correctly" as something a proof system can chew
+on?
+
+## What a SNARK gives you that a socket doesn't
+
+The tool here is a **SNARK** — a *succinct non-interactive argument of knowledge*. Unpack
+the adjectives and you get exactly the three things the socket version lacked:
+
+- **Non-interactive** — the proof is a single message. No live verifier, no back-and-forth
+  challenge. You can post it to a chain and walk away.
+- **Succinct** — the proof is small and fast to check, in principle regardless of how big
+  the computation behind it was.
+- **Argument of knowledge** — it convinces a skeptic that you *know* a valid witness, not
+  just that one exists.
+
+The price of admission is that you must express your computation in the proof system's
+language. The system I used was the Groth16 SNARK via [`bellman`](https://github.com/zkcrypto/bellman) —
+Zcash's library (a fork of which powered zkSync), over the BLS12-381 curve. The choice
+wasn't one I agonized over: a Substrate runtime — the thing a Polkadot parachain is built
+from — has to compile to `no_std` (no operating system, no standard library; it runs inside
+the chain's sandbox), and in 2022 `bellman` was the only proving crate I could find that
+built there at all. Constraints, not options. Its language is an **arithmetic circuit**:
+your computation, flattened into a list of constraints, each of the rigid form
+$A \times B = C$. Every variable is a field element; every step is a multiplication or
+addition you have to *prove you performed*. You don't write an algorithm;
+you write the algebra that pins down a correct execution.
+
+## A warm-up: proving you ran a little arithmetic
+
+Before the payout, the smallest possible circuit. Say I want to prove I know an $x$ with
+$x^3 + x + 5 = 35$, without revealing $x$. You can't feed a cubic to the prover directly —
+constraints are only $A \times B = C$ — so you *flatten* it into steps:
+
+$$
+x \cdot x = t_1, \qquad t_1 \cdot x = x^3, \qquad x^3 + x + 5 = \text{out}.
+$$
+
+In `bellman` each variable is **allocated** (private witness) or **alloc'd as input**
+(public), and each step becomes an enforced constraint ([the real circuit](https://github.com/optifat/equilibrium-bailsmen-snarks-test/blob/d9f424e3a6e87c9cd7a7cc96e4577b9e3a722fe3/bellman-examples/src/cube.rs#L24-L80)):
+
+```rust
+// private witness
+let x = cs.alloc(|| "x", || x_val.ok())?;
+
+// x * x = t1
+let t1 = cs.alloc(|| "t1", || t1_val.ok())?;
+cs.enforce(|| "t1", |lc| lc + x, |lc| lc + x, |lc| lc + t1);
+
+// t1 * x = x_cubed
+let x3 = cs.alloc(|| "x_cubed", || x3_val.ok())?;
+cs.enforce(|| "x_cubed", |lc| lc + t1, |lc| lc + x, |lc| lc + x3);
+
+// (x_cubed + x + 5) * 1 = out   ← `out` is public
+let out = cs.alloc_input(|| "out", || out_val)?;
+cs.enforce(|| "out", |lc| lc + x3 + x + (five, CS::one()), |lc| lc + CS::one(), |lc| lc + out);
+```
+
+Two things to hold onto. First, `alloc` vs `alloc_input` is the whole privacy story: the
+witness (`x`, the intermediates) stays secret; only the inputs (`out = 35`) are seen by the
+verifier. Second, that closing trick — multiplying by `CS::one()` — is how you smuggle an
+*addition* into a system that only offers multiplication: $(x^3 + x + 5)\times 1 = \text{out}$.
+(If you want the machinery under this — how a circuit becomes a polynomial you can prove —
+Vitalik's [QAPs from zero to hero](https://medium.com/@VitalikButerin/quadratic-arithmetic-programs-from-zero-to-hero-f6d558cea649)
+is the canonical read.)
+
+That's the entire craft: take the thing you want to prove, and grind it down into $A\times
+B = C$.
+
+## The bailsmen as a circuit
+
+Now the real computation. Each bailsman has a collateral and a debt; a margin-called
+borrower brings their own. The payout I need to prove correct is:
+
+$$
+\text{diff}_i = c_i - d_i, \qquad
+w_i = \frac{\text{diff}_i}{\sum_j \text{diff}_j}, \qquad
+\text{result}_i = \text{initial}_i + w_i \cdot \text{borrower}.
+$$
+
+Each bailsman's share $w_i$ is their net balance over the pool's total, and they receive
+that fraction of the borrower's position. Flattened into a circuit ([in full](https://github.com/optifat/equilibrium-bailsmen-snarks-test/blob/d9f424e3a6e87c9cd7a7cc96e4577b9e3a722fe3/bailsman-distribution/src/lib.rs#L34-L249)), it's a chain of
+$A\times B = C$ steps:
+
+```rust
+// per bailsman: diff = collateral - debt
+cs.enforce(|| "diff", |lc| lc + collateral - debt, |lc| lc + CS::one(), |lc| lc + diff);
+
+// running total of diffs, then its inverse
+let total_inv = cs.alloc(|| "total_inv", || total.invert())?;
+
+// weight = diff * total_inv
+cs.enforce(|| "weight", |lc| lc + diff, |lc| lc + total_inv, |lc| lc + weight);
+
+// incoming = weight * borrower_collateral
+cs.enforce(|| "incoming", |lc| lc + weight, |lc| lc + borrower_collateral, |lc| lc + incoming);
+
+// resulting = incoming + initial   ← PUBLIC (alloc_input)
+let result = cs.alloc_input(|| "resulting_collateral", || result_val)?;
+cs.enforce(|| "result", |lc| lc + incoming + initial, |lc| lc + CS::one(), |lc| lc + result);
+```
+
+Every line is one constraint the prover must satisfy, and only `result_i` is public; all the
+intermediates stay private. (Debt mirrors collateral — the same multiplications against the
+borrower's debt.)
+
+Division is the interesting bit. A circuit can't divide, but it can *multiply by an
+inverse* — so rather than compute $1/\text{total}$, the prover supplies it as a witness and
+the circuit multiplies by it. (Hold that thought; we'll come back to it.)
+
+## Prove off-chain, verify on-chain
+
+With the circuit written, the dream falls into two halves that mirror the architecture I
+gave it: an [`offchain` crate](https://github.com/optifat/equilibrium-bailsmen-snarks-test/blob/d9f424e3a6e87c9cd7a7cc96e4577b9e3a722fe3/offchain/src/lib.rs#L11-L60) that proves, and a [`chain` crate](https://github.com/optifat/equilibrium-bailsmen-snarks-test/blob/d9f424e3a6e87c9cd7a7cc96e4577b9e3a722fe3/chain/src/lib.rs#L42-L64) that verifies.
+
+```rust
+// offchain: do the real work, then prove you did it
+let new_state = margin_call(borrower, &bailsmen);          // the heavy per-bailsman loop
+let proof = create_random_proof(circuit, &params, rng)?;   // one short proof
+
+// chain: never re-runs the loop — just checks the proof against the new state
+verify_proof(&pvk, &proof, &public_inputs)?;
+```
+
+This is the whole point made concrete. The expensive part — touching every bailsman — runs
+once, off chain. The chain holds a *verifying key* and checks a single proof against the
+proposed new state. If it verifies, the chain adopts the state; the loop never ran on-chain
+at all.
+
+## The cheater who can't
+
+A proof system is only worth anything if it stops a *lying* prover. So I wrote one. The
+[`unreliable` path](https://github.com/optifat/equilibrium-bailsmen-snarks-test/blob/d9f424e3a6e87c9cd7a7cc96e4577b9e3a722fe3/offchain/src/unreliable_validator.rs#L17-L45) computes a self-serving payout — the first bailsman quietly rakes all of
+the borrower's collateral to himself and leaves everyone else holding only the debt — and
+then tries to prove *that* is the correct distribution:
+
+```rust
+// the cheat: validator takes all collateral, others eat the debt
+let new_collateral = bailsmen[0].collateral + borrower.collateral; // for himself
+// ...everyone else: collateral unchanged, debt += their share
+```
+
+It builds a proof. It posts the proof. And the chain rejects it — because the proof is
+checked against the *honest* circuit's verifying key, and a transcript for a different
+computation simply doesn't satisfy it. The verifier never inspects the prover's intentions;
+it checks math, and the math doesn't close. That's the property I'd been chasing since the
+socket days: **trust the proof, not the prover.**
+
+## Two ways the dream only half-came-true
+
+Here's where I keep myself honest, because this is the interesting part — and, like
+[the broken generators last time](/blog/zero-knowledge-from-scratch-pedersen), the lessons
+are the kind you only learn by shipping the thing.
+
+**The economics never worked.** A SNARK pays for itself only when *checking* the proof is far
+cheaper than *redoing* the computation — that gap is the whole point of the exercise. But the
+bailsmen payout is cheap: a few multiplications per user, nothing exotic. There was barely any
+computation to amortize, and a lot of proof overhead to pay for it. Producing the proof is
+real work; and *verifying* it isn't free either — a fixed cost for the pairing checks, plus a
+cost that grows with the number of **public inputs**, which, since I'd made every resulting
+balance public, is $O(\text{number of bailsmen})$. So I took cheap arithmetic and wrapped it
+in a proof that was plausibly *more* expensive to check than the arithmetic was to just run.
+I never measured it cleanly, and now I can't — but I'd be surprised if the SNARK beat the
+queue, and not shocked if it lost. It never shipped, and it probably shouldn't have.
+
+And the true $O(1)$ — if that's what you were really after — was never cryptographic anyway.
+The payout rewrites N balances; if the answer is N numbers, reading it is $O(N)$, proof or no
+proof. To beat that you stop rewriting N balances at all: keep each in *scaled* form against
+one shared multiplier, and a pool-wide payout becomes a single bump of that multiplier — every
+balance moving lazily, on read. That's the **coefficient** trick — the scaled-balance idea
+behind [the Marginly post](/blog/marginly-deleverage-coefficients), and the "socialized bad
+debt as one global update" I waved at in
+[the first post](/blog/zero-knowledge-from-scratch-pedersen). (Same catch I flagged there: a
+bailsman's balance spans many tokens at different prices, which keeps it from being quite that
+tidy — a story for another day.) A SNARK can attest to that cheap update; it can't manufacture
+it. The $O(1)$ was always the algorithm's job, not the proof's.
+
+**The constraint I left out.** Remember the prover *supplying* $\text{total}^{-1}$ as a
+witness? Nothing in the circuit forces that value to be the real inverse — there's no
+constraint checking $\text{total} \times \text{total}^{-1} = 1$ — you can [see it in the source](https://github.com/optifat/equilibrium-bailsmen-snarks-test/blob/d9f424e3a6e87c9cd7a7cc96e4577b9e3a722fe3/bailsman-distribution/src/lib.rs#L112-L123): `total_sum_inverted` is `alloc`'d as a bare witness, with no `enforce` tying it back. So the circuit doesn't
+quite prove "$w_i = \text{diff}_i / \text{total}$"; it proves "$w_i = \text{diff}_i \times k$
+for *some* $k$ the prover chose." A correct prover sets $k = \text{total}^{-1}$ and all is
+well — but the proof guarantees less than it looks like it does. It's the same species of
+mistake as setting two generators equal: a circuit that compiles, runs, and verifies, while
+quietly proving a weaker statement than you intended. The fix is one line — enforce
+$\text{total} \times \text{total}^{-1} = 1$ — and the lesson is the one this whole series
+keeps circling: *getting a proof to verify is easy; getting it to prove exactly what you
+mean is the hard part.*
+
+## Where this goes next
+
+What it was, in the end, was the best kind of dead end — the architecture genuinely right
+(prove once, verify once, catch the cheat), the economics genuinely wrong, and the whole thing
+the most I'd ever learned from something that didn't ship. The thread through both of its
+failures is the one this series keeps pulling on: a proof doesn't think for you. It will
+faithfully attest to whatever computation you hand it — cheap or wasteful, correct or subtly
+not — and noticing which is squarely your job.
+
+`bellman` and Groth16 were the 2022 tools I reached for because they were the ones that fit
+where I needed them. This is where the applied thread runs out, though — nothing I've built
+since has actually needed a SNARK. What stuck around was the itch. So from here the series
+drops any pretense of solving a real problem and just follows my own curiosity into the
+modern machinery: proof systems that are succinct and non-interactive by construction, with
+no per-circuit ceremony, that can even verify *other proofs* inside themselves. Same ideas,
+sharper tools — chased for their own sake.
+
+---
+
+*The snippets above are simplified for readability; the real (toy) code is at [optifat/equilibrium-bailsmen-snarks-test](https://github.com/optifat/equilibrium-bailsmen-snarks-test), and the inline links point straight into it.*
