@@ -14,7 +14,7 @@ export default function SiteNav() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line/70 bg-paper/80 backdrop-blur-md">
+    <header className="sticky top-0 z-50 border-b border-line/70 bg-paper/80 backdrop-blur-md print:hidden">
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
         <Link
           href="/"

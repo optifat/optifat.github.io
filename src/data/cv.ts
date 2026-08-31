@@ -1,5 +1,5 @@
 export const summary =
-  "DeFi protocol engineer who works top to bottom — deriving the mechanism math, writing the smart contracts, and building the C# and Rust services that run them in production. Top contributor to an audited leveraged-trading protocol (Marginly) and lead author of a multi-asset vault protocol (Levva), both shipped to mainnet — with further work spanning EVM, Solana, Substrate, and Stellar. On the side, I've been learning zero-knowledge proof systems by building them from scratch and writing them up on my blog.";
+  "Backend and protocol engineer who builds the services, APIs, and solvers that run DeFi products in production, plus the smart contracts and mechanism math underneath them. Built the C# backend and a production Rust MILP solver behind Levva's vaults; also top contributor to the audited Marginly protocol and lead author of Levva Vaults v2, both shipped to mainnet — with further work spanning EVM, Solana, Substrate, and Stellar. On the side, I've been learning zero-knowledge proof systems by building them from scratch and writing them up on my blog.";
 
 export type Experience = {
   role: string;
@@ -11,7 +11,7 @@ export type Experience = {
 
 export const experience: Experience[] = [
   {
-    role: "Protocol & Smart Contract Engineer",
+    role: "Backend & Protocol Engineer",
     company: "EQ LAB",
     period: "2022 — Present",
     location: "Remote",
@@ -51,14 +51,12 @@ export const education = [
 export const skills: { group: string; items: string[] }[] = [
   { group: "Languages", items: ["Rust", "C#", "Solidity", "TypeScript"] },
   {
-    group: "Chains",
+    group: "Backend & Services",
     items: [
-      "EVM",
-      "Solana",
-      "Substrate / Polkadot",
-      "Stellar / Soroban",
-      "Aptos",
-      "Sui",
+      "C# APIs & services",
+      "EVM event handlers",
+      "Transaction relaying",
+      "SDKs",
     ],
   },
   {
@@ -69,15 +67,6 @@ export const skills: { group: string; items: string[] }[] = [
       "DeFi protocol integration",
       "Audit remediation",
       "MEV / slippage design",
-    ],
-  },
-  {
-    group: "Backend & Services",
-    items: [
-      "C# APIs & services",
-      "EVM event handlers",
-      "Transaction relaying",
-      "SDKs",
     ],
   },
   {
@@ -95,6 +84,17 @@ export const skills: { group: string; items: string[] }[] = [
       "Merkle trees & proofs",
       "EIP-712 signatures",
       "Zero-knowledge proofs (from-scratch)",
+    ],
+  },
+  {
+    group: "Chains",
+    items: [
+      "EVM",
+      "Solana",
+      "Substrate / Polkadot",
+      "Stellar / Soroban",
+      "Aptos",
+      "Sui",
     ],
   },
 ];

@@ -8,10 +8,10 @@ export default function PageHeader({
   lead?: string;
 }) {
   return (
-    <header className="pb-12 pt-20 sm:pt-24">
+    <header className="pb-12 pt-20 sm:pt-24 print:pb-6 print:pt-0">
       <p className="eyebrow rise">{eyebrow}</p>
       <h1
-        className="font-display rise mt-4 text-5xl text-ink sm:text-6xl"
+        className="font-display rise mt-4 text-5xl text-ink sm:text-6xl print:text-4xl"
         style={{
           animationDelay: "70ms",
           fontVariationSettings: '"opsz" 144, "SOFT" 0, "WONK" 0',
