@@ -267,6 +267,27 @@ body {
   color: var(--ink);
 }
 
+/* ---- Print (CV export) ---- */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    animation: none !important;
+    transition: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+  section > div > :is(div, a) {
+    break-inside: avoid;
+  }
+}
+
 /* KaTeX display math: let wide matrices scroll instead of overflowing. */
 .prose .katex-display {
   overflow-x: auto;

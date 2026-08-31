@@ -14,7 +14,7 @@ export default function AboutPage() {
       <PageHeader
         eyebrow="About"
         title="Recognizing an old friend"
-        lead="I'm Pavel — a protocol engineer who builds DeFi systems from the math up. I trained as a physicist, and I never expected smart-contract development to be where I'd meet serious math again — but there it was, hiding inside leveraged-trading pools and vault mechanics."
+        lead="I'm Pavel — a backend and protocol engineer who builds DeFi systems from the math up. I trained as a physicist, and I never expected smart-contract development to be where I'd meet serious math again — but there it was, hiding inside leveraged-trading pools and vault mechanics."
       />
 
       <div className="max-w-2xl space-y-6 pb-16 text-lg leading-relaxed text-ink-soft">
@@ -59,10 +59,10 @@ export default function AboutPage() {
           That&apos;s the thread through most of what I do — I look for the
           structure hiding inside a problem that presents itself as expensive
           bookkeeping. And I like to carry it the whole way down: derive the
-          mechanism on paper, write the smart contracts, and build the Rust and
-          C# services that run them in production. I&apos;ve done that across
-          EVM, Solana, Substrate, and Stellar, on protocols that shipped to
-          mainnet and through audits.
+          mechanism on paper, build the Rust and C# services that run it in
+          production, plus the smart contracts underneath. I&apos;ve done that
+          across EVM, Solana, Substrate, and Stellar, on protocols that shipped
+          to mainnet and through audits.
         </p>
 
         <p>

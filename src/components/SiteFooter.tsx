@@ -4,7 +4,7 @@ import { site, nav } from "@/lib/site";
 export default function SiteFooter() {
   const year = 2026;
   return (
-    <footer className="mt-24 border-t border-line">
+    <footer className="mt-24 border-t border-line print:hidden">
       <div className="mx-auto max-w-5xl px-6 py-12">
         <div className="flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
           <div>

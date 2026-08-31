@@ -1,19 +1,22 @@
 export const site = {
   name: "Pavel Smelov",
   shortName: "Pavel",
-  role: "Protocol & Smart Contract Engineer",
+  role: "Backend & Protocol Engineer",
   // One-line tagline used in the hero and metadata.
   tagline: "I build DeFi protocols from the math up.",
   // A short paragraph for the about hub.
   intro:
-    "I build DeFi protocols end to end — deriving the mechanism math, writing the smart contracts, and building the Rust and C# services that run them in production. My work has shipped to mainnet and through audits, from leveraged-trading pools to multi-asset yield vaults, across EVM, Solana, Substrate, and Stellar. This is where I keep my work, my writing, and the occasional derivation I'm still chasing.",
+    "I build DeFi protocols end to end — deriving the mechanism math, building the Rust and C# services that run them in production, plus the smart contracts underneath. My work has shipped to mainnet and through audits, from leveraged-trading pools to multi-asset yield vaults, across EVM, Solana, Substrate, and Stellar. This is where I keep my work, my writing, and the occasional derivation I'm still chasing.",
   location: "Remote",
   email: "pavsmel@hotmail.com",
   // Used for absolute URLs in metadata / sitemap. Change when you deploy.
   url: "https://optifat.github.io",
   socials: [
     { label: "GitHub", href: "https://github.com/optifat" },
-    { label: "LinkedIn", href: "https://linkedin.com/" },
+    {
+      label: "LinkedIn",
+      href: "https://www.linkedin.com/in/pavel-smelov-683a04127",
+    },
     { label: "Email", href: "mailto:pavsmel@hotmail.com" },
   ],
 } as const;

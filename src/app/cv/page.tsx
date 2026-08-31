@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="eyebrow sticky top-20 hidden self-start lg:block">
+    <h2 className="eyebrow sticky top-20 hidden self-start lg:block print:static print:block">
       {children}
     </h2>
   );
@@ -19,14 +19,32 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function CVPage() {
   return (
-    <div className="mx-auto max-w-4xl px-6">
+    <div className="mx-auto max-w-4xl px-6 print:px-0">
+      {/* Letterhead — print only. */}
+      <div className="hidden print:mb-4 print:block">
+        <h1
+          className="font-display text-4xl text-ink"
+          style={{ fontVariationSettings: '"opsz" 144, "WONK" 0' }}
+        >
+          {site.name}
+        </h1>
+        <p className="mt-1 text-ink-soft">{site.role}</p>
+        <p className="mt-2 font-mono text-xs text-muted">
+          {site.email} · {site.location} ·{" "}
+          {site.socials
+            .filter((s) => s.label !== "Email")
+            .map((s) => s.href.replace(/^https?:\/\//, ""))
+            .join(" · ")}
+        </p>
+      </div>
+
       <PageHeader
         eyebrow="Curriculum Vitae"
         title="Experience"
         lead={summary}
       />
 
-      <div className="flex items-center gap-4 pb-12">
+      <div className="flex items-center gap-4 pb-12 print:hidden">
         <a
           href={`mailto:${site.email}`}
           className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5"
